@@ -1,12 +1,17 @@
 # Handoff prompt for Claude Code
 
-Copy everything below the line into a Claude Code session started INSIDE the
-unzipped `cost-control/` folder. It's written as an instruction to Claude Code.
+Copy everything below the line into a Claude Code session started INSIDE this
+repo (github.com/pmcbride/claude-cost-control — the folder name doesn't matter;
+install.sh resolves its source from its own location and always installs to
+`~/.claude/cost-control`). It's written as an instruction to Claude Code.
 
 ---
 
 You're installing a **Claude Code usage cost-control system** I built and had
-independently reviewed. The bundle is this working directory. Read `README.md`
+independently reviewed. The bundle is this git repo (working directory) —
+treat the repo as the source of truth: change files HERE and use `make sync`
+to push them into `~/.claude/cost-control`, never edit the installed copies
+directly. Read `README.md`
 first (especially "What you'll actually notice day-to-day" and "How the spawn
 gate works"), and `_REVIEW-INDEX.md` for the review history. Do NOT spawn
 subagents for this install — it's a single-pass job and I'm watching my usage.
@@ -32,11 +37,15 @@ newer — that's what the validation layer is for.
    above them, fail open on every breakage mode, and that the settings merge
    preserves an existing config). If anything fails, STOP and show me.
 
-3. **Preview, then install.**
+3. **Preview, then install (via the Makefile).**
    ```
-   ./install.sh --dry-run   # show me the plan first
-   ./install.sh             # copy files, merge settings (with backup), append CLAUDE.md, seed version.lock, re-run tests
+   make dry-run   # show me the plan first
+   make install   # copy files, merge settings (with backup), append CLAUDE.md, seed version.lock, self-test
    ```
+   Afterwards: `make sync` pushes repo edits / git pulls into
+   `~/.claude/cost-control` (preserving runtime state: version.lock, the
+   `.disabled` toggle flag) and re-runs the hook tests; `make test` runs the
+   full suite against the repo; `make status|on|off` drive the kill switch.
 
 4. **CRITICAL — my statusline must not change.** I have a custom statusLine I
    want to keep. install.sh handles this automatically: it detects my existing

@@ -77,7 +77,14 @@ if [[ $NO_SETTINGS -eq 1 ]]; then
   say "files are validated strictly and an invalid file is rejected as a whole."
 else
   BASE="$CLAUDE_DIR/settings.json"
-  [[ -f "$BASE" ]] || { [[ $DRY -eq 1 ]] && say "would create empty settings.json" || echo '{}' > "$BASE"; }
+  if [[ ! -f "$BASE" ]]; then
+    if [[ $DRY -eq 1 ]]; then
+      say "would create empty settings.json"
+      BASE="$(mktemp)"; echo '{}' > "$BASE"    # preview the merge against an empty config
+    else
+      echo '{}' > "$BASE"
+    fi
+  fi
   # Preserve a pre-existing custom statusline: remember it, and after the merge
   # re-point statusLine at statusline-wrap.sh, which writes the guards' state
   # file (state-only mode) and then runs the original command for display.
@@ -152,11 +159,14 @@ else CC_ROOT="$DEST" "$DEST/hooks/version-check.sh" >/dev/null 2>&1 || true
      say "version.lock: $(cat "$DEST/manifest/version.lock" 2>/dev/null || echo '(claude --version not found; will seed on first session)')"
 fi
 
-hdr "5. Offline self-test"
-if [[ $DRY -eq 1 ]]; then say "[dry-run] would run tests/run-all.sh"
+hdr "5. Offline self-test (installed copy)"
+# Only test-hooks.sh runs against the INSTALLED copy — it needs just hooks/,
+# statusline/, and cost-control.sh, which is all that lands in $DEST. The full
+# suite (merge/install tests need the whole repo) runs from the repo: tests/run-all.sh.
+if [[ $DRY -eq 1 ]]; then say "[dry-run] would run tests/test-hooks.sh against $DEST"
 elif [[ "${CC_INSTALL_NO_SELFTEST:-0}" == "1" ]]; then say "skipped (CC_INSTALL_NO_SELFTEST=1)"
-elif [[ -x "$DEST/tests/run-all.sh" ]]; then
-  if "$DEST/tests/run-all.sh" --quick > "$DEST/tests/last-run.log" 2>&1; then
+elif [[ -x "$DEST/tests/test-hooks.sh" ]]; then
+  if "$DEST/tests/test-hooks.sh" > "$DEST/tests/last-run.log" 2>&1; then
     say "PASSED (details: $DEST/tests/last-run.log)"
   else
     say "WARNING: self-test FAILED — hooks may not behave as designed on this machine."
