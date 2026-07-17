@@ -1,0 +1,60 @@
+# Claude Code usage dashboard — local, self-contained.
+#
+# Flow:  Claude Code --(OTLP)--> OpenTelemetry Collector --> Prometheus (metrics)
+#                                                        \--> Tempo      (traces / agent-tree drill-down)
+#                                          Grafana <------ Prometheus + Tempo
+#
+# Metrics answer "how much / by model / by session over time".
+# Traces (enable CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1) answer "WHICH subagent /
+# stage burned it" — each agent shows up as a span in the trace tree.
+#
+# Start:  docker compose up -d      Stop: docker compose down
+# Grafana: http://localhost:3000  (admin / admin)   Collector debug metrics: http://localhost:8889/metrics
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.109.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC   <- point Claude Code here
+      - "4318:4318"   # OTLP HTTP
+      - "8889:8889"   # Prometheus scrape endpoint (collector-exported metrics)
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom-data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on: [prometheus, tempo]
+    restart: unless-stopped
+
+volumes:
+  prom-data:
+  tempo-data:

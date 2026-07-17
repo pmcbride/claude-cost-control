@@ -1,0 +1,56 @@
+{
+  "//": "MERGE these keys into ~/.claude/settings.json (user-level) or a project .claude/settings.json. PREFER ./install.sh — its merge strips every '//'-comment key first. If you merge BY HAND, DELETE all '//' keys: user/project/local settings are validated STRICTLY (a file that fails validation is rejected as a whole — docs/en/settings), so stray keys can silently kill every hook. Assumes statusline/ and hooks/ are at ~/.claude/cost-control/ and chmod +x'd.",
+
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/cost-control/statusline/usage-statusline.sh",
+    "refreshInterval": 5,
+    "padding": 2
+  },
+
+  "outputStyle": "Terse",
+
+  "//dynamicWorkflowSize": "Set /config -> Dynamic workflow size = small (or medium). Not a settings.json key; set it in-app. Biases generated workflows to fewer agents.",
+  "//managedSettings": "For the belt-and-suspenders hard model gate, also hand-place managed-settings.snippet.json at your OS managed-settings path. See that file (and its note on the fable lead-session tradeoff).",
+  "//subagentModelEnv": "Do NOT set CLAUDE_CODE_SUBAGENT_MODEL globally — it OVERRIDES frontmatter (docs/en/model-config). Leave unset (frontmatter governs). Use it only tactically for one heavy session.",
+
+  "//spawnGating": "Verified vs code.claude.com docs 2026-07-16: a subagent spawn IS a PreToolUse call on the Agent tool (renamed from Task in v2.1.63; Task still aliases), and PreToolUse is the ONLY hook surface that can block it (JSON permissionDecision deny). SubagentStart fires on spawn but CANNOT block (context-injection only) — registered below for audit logging. TaskCreated is the task-LIST event (TaskCreate tool), unrelated to spawns — deliberately NOT registered. Run tests/test-hooks.sh offline, then the cost-control-verify self-test live.",
+
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "~/.claude/cost-control/hooks/version-check.sh", "timeout": 10 } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "~/.claude/cost-control/hooks/throttle.sh", "timeout": 10 } ] }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [ { "type": "command", "command": "~/.claude/cost-control/hooks/guard-subagent-model.sh", "timeout": 10 } ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [ { "type": "command", "command": "~/.claude/cost-control/hooks/guard-usage-budget.sh", "timeout": 10 } ]
+      }
+    ],
+    "SubagentStart": [
+      { "hooks": [ { "type": "command", "command": "~/.claude/cost-control/hooks/log-agent-events.sh" } ] }
+    ],
+    "SubagentStop": [
+      { "hooks": [ { "type": "command", "command": "~/.claude/cost-control/hooks/log-agent-events.sh" } ] }
+    ]
+  },
+
+  "env": {
+    "//": "Optional — uncomment to stream telemetry to the local Grafana stack (dashboard/). Restart Claude Code after changing.",
+    "//CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "//OTEL_METRICS_EXPORTER": "otlp",
+    "//OTEL_LOGS_EXPORTER": "otlp",
+    "//OTEL_TRACES_EXPORTER": "otlp",
+    "//OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+    "//OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+    "//OTEL_METRIC_EXPORT_INTERVAL": "10000",
+    "//OTEL_METRICS_INCLUDE_SESSION_ID": "true",
+    "//CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1"
+  }
+}

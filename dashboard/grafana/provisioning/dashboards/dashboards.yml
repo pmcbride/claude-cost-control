@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: claude-cost-control
+    orgId: 1
+    folder: "Claude Code"
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
