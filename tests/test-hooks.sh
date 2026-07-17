@@ -209,6 +209,39 @@ OUT="$(printf '%s' "$SL_IN" | bash "$ROOT/statusline/statusline-wrap.sh" "printf
 [[ $CODE -eq 0 && "$OUT" == "MY-CUSTOM-LINE" ]] && jq -e '.five_hour_pct == 24' "$CC_USAGE_STATE" >/dev/null 2>&1 \
   && ok "statusline-wrap: user's display untouched AND guard state written" || bad "wrapper" "$OUT/$CODE state=$(cat "$CC_USAGE_STATE" 2>/dev/null)"
 
+# --- [cc-off] marker in a WRAPPED custom statusline (added 2026-07-17) ---
+# The bundle's own statusline renders [cc-off] in a block that STATE_ONLY skips,
+# so the wrapper must append it, but ONLY while disabled.
+WRAP_FLAG="$(mktemp -u)"
+OUT="$(printf '%s' "$SL_IN" | CC_DISABLE_FLAG="$WRAP_FLAG" CC_STATUSLINE_NOCOLOR=1 \
+       bash "$ROOT/statusline/statusline-wrap.sh" "printf 'MY-CUSTOM-LINE'")"; CODE=$?
+[[ $CODE -eq 0 && "$OUT" == "MY-CUSTOM-LINE" ]] \
+  && ok "statusline-wrap: guards ARMED -> no [cc-off], display byte-for-byte unchanged" \
+  || bad "wrapper armed" "$OUT/$CODE"
+
+: > "$WRAP_FLAG"   # simulate /cost-control off
+OUT="$(printf '%s' "$SL_IN" | CC_DISABLE_FLAG="$WRAP_FLAG" CC_STATUSLINE_NOCOLOR=1 \
+       bash "$ROOT/statusline/statusline-wrap.sh" "printf 'MY-CUSTOM-LINE'")"; CODE=$?
+[[ $CODE -eq 0 && "$OUT" == "MY-CUSTOM-LINE [cc-off]" ]] \
+  && ok "statusline-wrap: guards DISARMED -> [cc-off] appended to the user's own line" \
+  || bad "wrapper cc-off" "$OUT/$CODE"
+
+# multi-line custom statuslines must keep their internal newlines
+OUT="$(printf '%s' "$SL_IN" | CC_DISABLE_FLAG="$WRAP_FLAG" CC_STATUSLINE_NOCOLOR=1 \
+       bash "$ROOT/statusline/statusline-wrap.sh" "printf 'LINE1\nLINE2'")"; CODE=$?
+[[ $CODE -eq 0 && "$OUT" == $'LINE1\nLINE2 [cc-off]' ]] \
+  && ok "statusline-wrap: multi-line display preserved, marker appended to last line" \
+  || bad "wrapper multiline" "$OUT/$CODE"
+
+# state must still be written while disabled (statusline is display-only; the
+# flag disarms the GUARDS, not the state feed)
+rm -f "$CC_USAGE_STATE"
+printf '%s' "$SL_IN" | CC_DISABLE_FLAG="$WRAP_FLAG" bash "$ROOT/statusline/statusline-wrap.sh" "printf 'X'" >/dev/null 2>&1
+jq -e '.five_hour_pct == 24' "$CC_USAGE_STATE" >/dev/null 2>&1 \
+  && ok "statusline-wrap: still writes guard state while disabled" \
+  || bad "wrapper state while off" "$(cat "$CC_USAGE_STATE" 2>/dev/null)"
+rm -f "$WRAP_FLAG"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [[ $FAIL -eq 0 ]] || exit 1

@@ -13,7 +13,9 @@
 #   OFF disables:  guard-subagent-model (spawn denials), guard-usage-budget
 #                  (usage-band denials), throttle (usage nudges), version-check
 #                  (setup/drift messages).
-#   OFF keeps:     the statusline (display-only; shows a dim [cc-off] marker),
+#   OFF keeps:     the statusline (display-only; shows a [cc-off] marker — either
+#                  rendered by the bundle's own statusline, or appended by
+#                  statusline-wrap.sh if you kept a custom one), and
 #                  log-agent-events (passive audit log). Neither restricts
 #                  anything nor injects a word into the conversation.
 # The managed-settings availableModels gate (if you placed it) is OS-level and

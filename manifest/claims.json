@@ -1,7 +1,8 @@
 {
   "$schema_note": "Machine-readable baseline of every version-dependent claim the cost-control bundle relies on. The cost-control-verify skill diffs the CURRENT Claude Code version's docs against this file, writes CHANGELOG entries, and patches the 'affects' targets. verdict/confidence are as-of baseline_verified_date. Edit via the skill, not by hand, so the changelog stays honest.",
-  "baseline_docs_version": "unpinned (docs fetched 2026-07-16; pin the exact version with `claude --version` on first install)",
-  "baseline_verified_date": "2026-07-16",
+  "baseline_docs_version": "2.1.212 (pinned on first install 2026-07-17 via `claude --version`; supersedes the unpinned 2026-07-16 doc fetch)",
+  "baseline_verified_date": "2026-07-17",
+  "baseline_scope_note": "The 2026-07-17 v2.1.212 baseline pass RE-VERIFIED the 8 claims that govern executable guardrail behavior, each against a verbatim quote from a live doc fetch: spawn-gating-event, spawn-tool-input-schema, agent-frontmatter-hooks, nested-spawn-hooks, subagent-model-precedence, explore-agent-model, statusline-rate-limits, available-models-gate. The remaining 7 (workflow-size-config, telemetry-metrics, session-controls, output-styles, hooks-context-injection, usage-attribution, claude-version-cmd) govern PROSE, DASHBOARD, and DOC surfaces only — they were NOT re-fetched this pass (deliberate token frugality per the skill's cost note) and carry their 2026-07-16 verdicts forward UNCHANGED. Treat those 7 as as-of-2026-07-16, not as-of-2.1.212.",
   "verify_sources": [
     "https://code.claude.com/docs/en/changelog.md",
     "https://code.claude.com/docs/en/hooks.md",
@@ -22,8 +23,8 @@
       "summary": "Which hook surface can block a subagent spawn.",
       "verdict": "CONFIRMED",
       "confidence": "high",
-      "current_value": "A subagent spawn IS a PreToolUse tool call on the `Agent` tool (renamed from `Task` in v2.1.63; `Task(...)` references still work as aliases — sub-agents.md). PreToolUse blocks via JSON permissionDecision:'deny' and is the ONLY hook surface that can block a spawn. `SubagentStart` fires when a subagent is spawned but CANNOT block (hooks.md exit-code table: 'Shows stderr to user only'; decision-control: context-injection only) — its payload carries agent_id/agent_type, no model. `TaskCreated` is the task-LIST event ('when a task is being created via TaskCreate' — hooks.md) and is unrelated to spawns; blocking it rolls back a todo item.",
-      "since_version": "2.1.63 (rename)",
+      "current_value": "RE-VERIFIED 2026-07-17 vs v2.1.212 docs — mechanism unchanged; two wording updates. A subagent spawn IS a PreToolUse tool call on the `Agent` tool. sub-agents.md VERBATIM: 'In version 2.1.63, the Task tool was renamed to Agent. Existing `Task(...)` references in settings and agent definitions still work as aliases.' PreToolUse is the ONLY hook surface that can block a spawn — hooks.md decision-control table VERBATIM: 'PreToolUse | hookSpecificOutput | permissionDecision (allow/deny/ask/defer), permissionDecisionReason' (NOTE: 'defer' is a 4th value not present at the 2026-07-16 baseline; the guards only ever emit 'deny', so no change needed). `SubagentStart` CANNOT block — the current wording is NOT the baseline's 'Shows stderr to user only' but hooks.md decision-control table VERBATIM: 'SessionStart, Setup, SubagentStart | Context only | hookSpecificOutput.additionalContext adds context for Claude. ... No blocking or decision control'; corroborated VERBATIM: 'For SessionStart, Setup, and SubagentStart, the exit code 2 stderr renders in the transcript as a <hook name> hook error notice ... Claude doesn't see it, and the session or subagent proceeds.' SubagentStart payload carries agent_id + agent_type only, no model (hooks.md 'SubagentStart input'). `TaskCreated` is the task-LIST event — hooks.md lifecycle table VERBATIM: 'TaskCreated | When a task is being created via TaskCreate' — unrelated to spawns; blocking it rolls back a todo item. (It also takes no matcher: 'TaskCreated ... don't support matchers and always fire on every occurrence'.)",
+      "since_version": "2.1.63 (rename); 'defer' permissionDecision value present as of v2.1.212 docs",
       "doc_urls": ["https://code.claude.com/docs/en/hooks.md", "https://code.claude.com/docs/en/sub-agents.md", "https://code.claude.com/docs/en/tools-reference.md"],
       "verify": "doc-fetch hooks.md exit-code table + sub-agents.md rename note; live: spawn fable subagent, expect deny entry in model-guard.jsonl",
       "affects": [
@@ -35,13 +36,13 @@
     },
     {
       "id": "spawn-tool-input-schema",
+      "verdict": "CONFIRMED",
+      "confidence": "high",
       "summary": "Field layout of the Agent tool's tool_input as seen by PreToolUse hooks.",
-      "verdict": "UNVERIFIED",
-      "confidence": "medium",
-      "current_value": "The hooks reference does not publish a per-tool tool_input table for Agent. Strong indirect evidence: the Agent SDK docs show tool_use blocks named Agent with `input.subagent_type`, and sub-agents.md confirms a per-invocation `model` parameter exists (model resolution order step 2). The guards probe .tool_input.model / .tool_input.params.model / .tool_input.opts.model and fail open.",
-      "since_version": "2.1.63",
+      "current_value": "NOW PUBLISHED (verified 2026-07-17 vs v2.1.212 docs; was UNVERIFIED at the 2026-07-16 baseline). hooks.md 'Tool input schemas' section '##### Agent — Spawns a subagent' publishes the table VERBATIM: `prompt` (string), `description` (string), `subagent_type` (string, e.g. \"Explore\", 'Type of specialized agent to use'), `model` (string, e.g. \"sonnet\", 'Optional model alias to override the default'). This CONFIRMS the guards' primary probe paths .tool_input.model and .tool_input.subagent_type are correct; the .params.model/.opts.model fallbacks are now redundant but harmless. BONUS (PostToolUse): tool_response for a completed Agent call carries resolvedModel (v2.1.174+ — 'the model the subagent actually runs on, which can differ from the model value in tool_input'), totalTokens, totalDurationMs, totalToolUseCount, and a usage{} token breakdown — a documented surface for per-subagent cost attribution. NOTE: as of v2.1.198 subagents run in the BACKGROUND by default, so an omitted run_in_background yields status 'async_launched' and tool_response carries NO usage fields.",
+      "since_version": "2.1.63 (tool); schema documented as of the v2.1.212 docs",
       "doc_urls": ["https://code.claude.com/docs/en/hooks.md", "https://code.claude.com/docs/en/agent-sdk/subagents.md", "https://code.claude.com/docs/en/sub-agents.md"],
-      "verify": "claude --debug: dump hook stdin on a spawn; inspect field paths. LOAD-BEARING under defaults: wrong paths => model='' => allow. Backstops: CC_REQUIRE_EXPLICIT_MODEL=1 and/or the availableModels managed gate.",
+      "verify": "doc-fetch hooks.md '##### Agent' tool-input table (CONFIRMED 2026-07-17). Previously LOAD-BEARING-and-unverified: wrong paths => model='' => allow. Probes now match the published schema; re-check this table after each update. Backstops remain: CC_REQUIRE_EXPLICIT_MODEL=1 and/or the availableModels managed gate.",
       "affects": [
         {"file": "hooks/guard-subagent-model.sh", "what": "model/subagent_type probes; fails open"},
         {"file": "hooks/guard-usage-budget.sh", "what": "same probes"}
@@ -52,7 +53,7 @@
       "summary": "Subagent frontmatter supports a `hooks:` key scoped to that agent's lifecycle.",
       "verdict": "CONFIRMED",
       "confidence": "high",
-      "current_value": "sub-agents.md 'Supported frontmatter fields' lists `hooks` ('Lifecycle hooks scoped to this subagent'); 'Define hooks for subagents' documents PreToolUse-in-frontmatter firing while the agent is active, including when spawned via the Agent tool. CAVEAT: plugin-shipped subagents IGNORE frontmatter hooks/mcpServers/permissionMode — the bundle's agents must live in ~/.claude/agents/ or .claude/agents/ (they do).",
+      "current_value": "RE-VERIFIED 2026-07-17 vs v2.1.212 docs — unchanged. sub-agents.md 'Supported frontmatter fields' VERBATIM: '`hooks` | No | Lifecycle hooks scoped to this subagent. Ignored for plugin subagents'. CAVEAT confirmed VERBATIM: 'For security reasons, plugin subagents don't support the `hooks`, `mcpServers`, or `permissionMode` frontmatter fields. These fields are ignored when loading agents from a plugin. If you need them, copy the agent file into `.claude/agents/` or `~/.claude/agents/`.' — the bundle's agents install to ~/.claude/agents/, so the frontmatter gate applies to them.",
       "since_version": "unknown",
       "doc_urls": ["https://code.claude.com/docs/en/sub-agents.md"],
       "verify": "doc-fetch sub-agents.md#supported-frontmatter-fields",
@@ -63,8 +64,8 @@
       "summary": "Do settings.json PreToolUse hooks fire for tool calls made BY a subagent?",
       "verdict": "PARTIAL",
       "confidence": "low",
-      "current_value": "AMBIGUOUS in current docs. hooks.md common-input fields say agent_id is 'present only when the hook fires inside a subagent call' (implying some hooks fire inside subagents), while sub-agents.md positions frontmatter hooks as the way to run hooks 'only while that subagent is active' and settings.json for main-session lifecycle events. Nested subagent spawns exist as of v2.1.172 (depth ≤5). The frontmatter-replicated gate covers nested spawns REGARDLESS of which reading is right, so this claim is not load-bearing.",
-      "since_version": "2.1.172 (nested spawns)",
+      "current_value": "RE-VERIFIED 2026-07-17 vs v2.1.212 docs — STILL AMBIGUOUS, verdict stays PARTIAL. hooks.md common-input fields VERBATIM: 'agent_id | Unique identifier for the subagent. Present only when the hook fires inside a subagent call. Use this to distinguish subagent hook calls from main-thread calls.' — implies settings-level hooks DO fire inside subagents, but no page states it outright for PreToolUse, while sub-agents.md positions frontmatter hooks as the per-subagent mechanism. Depth limit now CONFIRMED VERBATIM: 'Depth is counted as the number of subagent levels below the main conversation... A subagent at depth five doesn't receive the Agent tool and can't spawn further. The limit is fixed and not configurable.' The frontmatter-replicated gate covers nested spawns REGARDLESS of which reading is right, so this claim remains NOT load-bearing. NOTE (sub-agents.md, security): 'plugin subagents don't support the hooks, mcpServers, or permissionMode frontmatter fields' — so the frontmatter gate only covers agents in ~/.claude/agents/ or .claude/agents/ (where the bundle's are), NOT plugin-shipped subagents; those are covered by the settings-level PreToolUse gate if it fires nested, else ungated.",
+      "since_version": "2.1.172 (nested spawns); depth-5 fixed limit confirmed v2.1.212",
       "doc_urls": ["https://code.claude.com/docs/en/hooks.md", "https://code.claude.com/docs/en/sub-agents.md"],
       "verify": "claude --debug: run a subagent that calls Bash; check whether the settings-level PreToolUse hook logged with agent_id set",
       "affects": [{"file": "agents/*.md", "what": "gate replicated into frontmatter (harmless belt-and-suspenders if settings hooks do fire inside subagents)"}]
@@ -74,8 +75,8 @@
       "summary": "CLAUDE_CODE_SUBAGENT_MODEL is a highest-precedence override; =inherit == unset.",
       "verdict": "CONFIRMED",
       "confidence": "high",
-      "current_value": "model-config.md env-var table: 'Overrides the per-invocation model parameter and the subagent definition's model frontmatter. Set to inherit to use normal model resolution.' sub-agents.md gives the full resolution order: (1) CLAUDE_CODE_SUBAGENT_MODEL, (2) per-invocation model param, (3) frontmatter, (4) main conversation's model. inherit==unset as of v2.1.196 (earlier versions: inherit forced the main model).",
-      "since_version": "2.1.196 (inherit==unset)",
+      "current_value": "RE-VERIFIED 2026-07-17 vs v2.1.212 docs — unchanged. model-config.md env-var table VERBATIM: CLAUDE_CODE_SUBAGENT_MODEL is 'The model to use for all subagents, agent teams, and the agents a workflow runs. Accepts an alias such as `haiku` or a full model name, and overrides the per-invocation `model` parameter and the subagent definition's `model` frontmatter. Set to `inherit` to use normal model resolution instead'. sub-agents.md resolution order: (1) CLAUDE_CODE_SUBAGENT_MODEL, (2) per-invocation model param, (3) frontmatter, (4) main conversation's model. inherit==unset as of v2.1.196 (earlier: inherit forced the main model). NEW since baseline (v2.1.211, applies to this install): 'A per-invocation `model` parameter also applies when the subagent is resumed or sent a follow-up message, so the subagent stays on that model. Before v2.1.211, resuming dropped the per-invocation value and the subagent reverted to its definition's `model` field or, without one, the main conversation's model.' => on v2.1.212 an explicit per-spawn model now STICKS across resume; the old silent upgrade-to-lead-model-on-resume cost leak is gone. Also: 'Claude Code checks the environment variable, per-invocation parameter, and frontmatter values against your organization's availableModels allowlist. It skips a value that resolves to an excluded model and runs the subagent on the inherited model instead.'",
+      "since_version": "2.1.196 (inherit==unset); 2.1.211 (per-invocation model survives resume)",
       "doc_urls": ["https://code.claude.com/docs/en/model-config.md", "https://code.claude.com/docs/en/sub-agents.md"],
       "verify": "doc-fetch model-config.md environment-variables + sub-agents.md choose-a-model",
       "affects": [
@@ -86,13 +87,13 @@
     },
     {
       "id": "explore-agent-model",
+      "verdict": "CONFIRMED",
+      "confidence": "high",
       "summary": "Built-in Explore agent's default model (research said it stopped forcing Haiku ~2.1.198).",
-      "verdict": "UNVERIFIED",
-      "confidence": "low",
-      "current_value": "Built-in subagents Explore/Plan/general-purpose exist (hooks.md matcher examples name them). Their default models are not stated in the docs fetched. Our custom Explore with model:haiku overrides the built-in for that name and is valid regardless.",
-      "since_version": "research says 2.1.198",
+      "current_value": "CONFIRMED 2026-07-17 vs v2.1.212 docs (was UNVERIFIED/low at the 2026-07-16 baseline; the 2.1.198 research figure is now doc-backed). sub-agents.md 'Built-in subagents' VERBATIM: 'As of v2.1.198, Explore inherits the main conversation's model instead of always running on Haiku. On the Claude API, the inherited model is capped at Opus: a main conversation on a higher tier runs Explore on Opus, and a main conversation on Sonnet or Haiku runs Explore on that same model.' And VERBATIM: 'A user or project subagent named `Explore` overrides the built-in and keeps its own `model` field, so define one with `model: haiku` to keep exploration on a lower-cost model.' => the bundle's agents/explore.md (model: haiku) is EXACTLY the documented remedy, and is load-bearing on v2.1.212: without it, Explore would inherit this user's Opus/Fable lead session and explore at lead-model cost.",
+      "since_version": "2.1.198",
       "doc_urls": ["https://code.claude.com/docs/en/sub-agents.md"],
-      "verify": "doc-fetch sub-agents.md built-in subagents section",
+      "verify": "doc-fetch sub-agents.md built-in subagents section (CONFIRMED 2026-07-17)",
       "affects": [{"file": "agents/explore.md", "what": "custom haiku override; harmless if built-in differs"}]
     },
     {
@@ -100,7 +101,7 @@
       "summary": "Statusline stdin JSON carries live rate_limits + cost + context fields.",
       "verdict": "CONFIRMED",
       "confidence": "high",
-      "current_value": "statusline.md 'Available data' documents rate_limits.{five_hour,seven_day}.used_percentage (0-100) + .resets_at (unix epoch seconds); cost.total_cost_usd; context_window.used_percentage; exceeds_200k_tokens; effort.level; output_style.name; agent.name. rate_limits appears only for Claude.ai subscribers (Pro/Max) AFTER the first API response; each window may be independently absent — docs recommend the `// empty` jq guard the scripts use. ANSI colors are supported; Claude Code CAPTURES the script's stdout (never a tty), so never gate colors on isatty.",
+      "current_value": "RE-VERIFIED 2026-07-17 vs v2.1.212 docs — unchanged, quotes now verbatim. statusline.md 'Available data': 'rate_limits.five_hour.used_percentage, rate_limits.seven_day.used_percentage | Percentage of the 5-hour or 7-day rate limit consumed, from 0 to 100' and 'rate_limits.five_hour.resets_at, rate_limits.seven_day.resets_at | Unix epoch seconds when the 5-hour or 7-day rate limit window resets'; plus cost.total_cost_usd; context_window.used_percentage; exceeds_200k_tokens; effort.level; output_style.name; agent.name. Presence rule VERBATIM: 'rate_limits: appears only for Claude.ai subscribers (Pro/Max) after the first API response in the session. Each window (five_hour, seven_day) may be independently absent. Use jq -r '.rate_limits.five_hour.used_percentage // empty' to handle absence gracefully.' — exactly the guard the scripts use. Colors VERBATIM: 'Colors: use ANSI escape codes like \\033[32m for green (terminal must support them)'; capture VERBATIM: 'Claude Code captures your script's output instead of connecting it directly to the terminal, so tput cols and language-level width detection cannot read the terminal size from inside the script' => stdout is never a tty, so never gate colors on isatty (the scripts gate on CC_STATUSLINE_NOCOLOR only). Related v2.1.153+: COLUMNS/LINES env vars carry terminal dimensions if ever needed.",
       "since_version": "unknown",
       "doc_urls": ["https://code.claude.com/docs/en/statusline.md"],
       "verify": "doc-fetch statusline.md; or write hook/statusline stdin to a file mid-session",
@@ -141,9 +142,9 @@
       "verdict": "CONFIRMED",
       "confidence": "high",
       "current_value": "model-config.md 'Restrict model selection': the allowlist applies to the main session model (/model, --model, ANTHROPIC_MODEL, resume), alias resolution, AND subagent models — 'the model field in subagent frontmatter, the Agent tool's model parameter, CLAUDE_CODE_SUBAGENT_MODEL'. Entries match a family alias (sonnet), a version prefix, or a full model ID. An excluded subagent value is SKIPPED and the subagent runs on the inherited model. enforceAvailableModels (v2.1.175+) extends it to the Default picker option. Managed paths (settings.md): macOS /Library/Application Support/ClaudeCode/, Linux/WSL /etc/claude-code/, Windows C:\\Program Files\\ClaudeCode\\; managed-settings.d/*.json drop-ins merge alphabetically. Managed settings parse TOLERANTLY (invalid entries stripped with a warning; /doctor lists them); user/project/local files are STRICT (invalid file rejected as a whole). settings.md lists availableModels as settable in any scope, though model-config frames it as managed/policy — a user-scope allowlist is self-serve but also self-removable.",
-      "since_version": "2.1.175 (enforceAvailableModels)",
+      "since_version": "2.1.175 (enforceAvailableModels); 2.1.210 (auto-mode classifier interaction)",
       "doc_urls": ["https://code.claude.com/docs/en/model-config.md", "https://code.claude.com/docs/en/settings.md"],
-      "verify": "doc-fetch model-config.md restrict-model-selection + settings.md settings-files",
+      "verify": "doc-fetch model-config.md restrict-model-selection + settings.md settings-files (RE-VERIFIED 2026-07-17 vs v2.1.212; scope + match rules unchanged). NEW v2.1.210 caveat, RELEVANT TO THIS INSTALL (permissions.defaultMode='auto' + Fable lead) — model-config.md VERBATIM: 'the classifier's Claude Sonnet 5 default applies only when the allowlist permits Sonnet 5. When it's excluded, the classifier runs on the session's model, which the allowlist already governs, or on an Opus model when the session runs on Fable 5.' => if the availableModels gate is ever placed and OMITS sonnet, the auto-mode permission classifier stops running on cheap Sonnet 5 and falls back to the session model (or Opus under a Fable lead) — a silent per-tool-call cost increase on every auto-mode decision. Any allowlist placed here should therefore INCLUDE sonnet. Decide alongside the fable lead-session tradeoff before placing the gate.",
       "affects": [{"file": "managed-settings.snippet.json", "what": "paths, tolerant-parse note, fable tradeoff"}, {"file": "settings.snippet.json", "what": "strict-validation warning for manual merges"}]
     },
     {
