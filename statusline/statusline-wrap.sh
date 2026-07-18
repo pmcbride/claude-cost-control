@@ -44,9 +44,17 @@ if [[ ! -f "$DISABLE_FLAG" ]]; then
   exit 0
 fi
 
-# Guards DISARMED: buffer your output and append the marker. Any failure here
-# falls back to your unmodified display — the marker is never worth a broken line.
-out="$(printf '%s' "$input" | bash -c "$ORIG")" || { printf '%s' "$input" | bash -c "$ORIG"; exit 0; }
+# Guards DISARMED: buffer your output and append the marker.
+#
+# Deliberately IGNORE your command's exit status. Command substitution has
+# already captured whatever it printed, and showing that is the correct
+# fail-open posture — a statusline ending in a bare `git`/`grep`/`test` exits
+# nonzero routinely while printing a perfectly good line. Never re-run $ORIG to
+# "retry": statuslines render on every UI refresh, so a rerun would double any
+# side effect your command has (file writes, network calls, rate-limited APIs)
+# and would display the SECOND run's output, which can differ from the render
+# that actually happened.
+out="$(printf '%s' "$input" | bash -c "$ORIG")" || true
 if [[ "${CC_STATUSLINE_NOCOLOR:-0}" == "1" ]]; then
   printf '%s %s' "$out" '[cc-off]'
 else
