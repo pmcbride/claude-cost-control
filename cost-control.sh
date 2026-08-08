@@ -39,9 +39,14 @@ state_summary() {
 }
 
 recent_denies() {
-  local n=0
+  local n=0 c
   for f in "$GUARD_LOG" "$MODEL_LOG"; do
-    [[ -f "$f" ]] && n=$(( n + $(grep -c '"action":"deny"' "$f" 2>/dev/null || echo 0) ))
+    # grep -c PRINTS 0 and EXITS 1 when nothing matches, so `|| echo 0` would
+    # append a second 0 and wedge the arithmetic ("0\n0") on the healthy path.
+    # Capture the count, then default it — never fold a fallback into $(( )).
+    [[ -f "$f" ]] || continue
+    c="$(grep -c '"action":"deny"' "$f" 2>/dev/null || true)"
+    n=$(( n + ${c:-0} ))
   done
   echo "  total denials logged: $n  (see ~/.claude/logs/*-guard.jsonl)"
 }

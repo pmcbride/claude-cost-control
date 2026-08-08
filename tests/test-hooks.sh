@@ -212,7 +212,7 @@ OUT="$(printf '%s' "$SL_IN" | bash "$ROOT/statusline/statusline-wrap.sh" "printf
 # --- [cc-off] marker in a WRAPPED custom statusline (added 2026-07-17) ---
 # The bundle's own statusline renders [cc-off] in a block that STATE_ONLY skips,
 # so the wrapper must append it, but ONLY while disabled.
-WRAP_FLAG="$(mktemp -u)"
+WRAP_FLAG="$TMP/wrap.disabled"   # inside $TMP so the EXIT trap always reaps it
 OUT="$(printf '%s' "$SL_IN" | CC_DISABLE_FLAG="$WRAP_FLAG" CC_STATUSLINE_NOCOLOR=1 \
        bash "$ROOT/statusline/statusline-wrap.sh" "printf 'MY-CUSTOM-LINE'")"; CODE=$?
 [[ $CODE -eq 0 && "$OUT" == "MY-CUSTOM-LINE" ]] \
@@ -236,7 +236,7 @@ OUT="$(printf '%s' "$SL_IN" | CC_DISABLE_FLAG="$WRAP_FLAG" CC_STATUSLINE_NOCOLOR
 # A custom statusline that exits NONZERO must still render, keep its marker, and
 # run EXACTLY ONCE. Re-running it would double any side effect it has and would
 # display the second run's output instead of the render that actually happened.
-WRAP_CNT="$(mktemp -u)"
+WRAP_CNT="$TMP/wrap.count"       # inside $TMP so the EXIT trap always reaps it
 OUT="$(printf '%s' "$SL_IN" | CC_DISABLE_FLAG="$WRAP_FLAG" CC_STATUSLINE_NOCOLOR=1 \
        bash "$ROOT/statusline/statusline-wrap.sh" \
        "printf x >> '$WRAP_CNT'; printf 'FAILING-LINE'; exit 1")"; CODE=$?

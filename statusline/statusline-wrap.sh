@@ -54,9 +54,16 @@ fi
 # side effect your command has (file writes, network calls, rate-limited APIs)
 # and would display the SECOND run's output, which can differ from the render
 # that actually happened.
+#
+# This branch is NOT byte-identical to the armed one: command substitution
+# strips trailing newlines, so a statusline ending in `echo` loses its final \n
+# here. Harmless (Claude Code trims the statusline anyway) — but the header's
+# "byte-for-byte" promise describes the ARMED path, not this one.
+# ${out:+$out } supplies the separating space only when there IS output, so a
+# command that prints nothing renders "[cc-off]", not " [cc-off]".
 out="$(printf '%s' "$input" | bash -c "$ORIG")" || true
 if [[ "${CC_STATUSLINE_NOCOLOR:-0}" == "1" ]]; then
-  printf '%s %s' "$out" '[cc-off]'
+  printf '%s%s' "${out:+$out }" '[cc-off]'
 else
-  printf '%s %s' "$out" $'\033[33m[cc-off]\033[0m'
+  printf '%s%s' "${out:+$out }" $'\033[33m[cc-off]\033[0m'
 fi

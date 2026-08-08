@@ -22,9 +22,10 @@ Semantics, so you can answer follow-up questions accurately:
 - **off** — writes `~/.claude/cost-control/.disabled`. From the next tool call,
   the spawn guard, the usage-budget guard, the throttle nudge, and the
   version-check message all no-op (they check the flag first and exit 0). No
-  restart needed. The statusline keeps rendering (with a dim `[cc-off]` marker)
-  and the passive agent-event log keeps writing — neither restricts anything or
-  injects text into the conversation.
+  restart needed. The statusline keeps rendering with a yellow `[cc-off]` marker
+  — rendered by the bundle's own statusline, or appended by `statusline-wrap.sh`
+  if the user kept a custom one — and the passive agent-event log keeps writing.
+  Neither restricts anything or injects text into the conversation.
 - **on** — removes the flag; everything re-arms on the next tool call.
 - **status** — enabled/disabled, current 5h/7d usage from the state file,
   threshold bands, and how many denials the guards have logged.
