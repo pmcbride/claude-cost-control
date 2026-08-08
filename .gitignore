@@ -1,0 +1,2 @@
+# Session worktrees live inside the repo; never track them.
+.claude/worktrees/
