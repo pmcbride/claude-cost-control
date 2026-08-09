@@ -15,10 +15,14 @@
 #     fails if it exceeds budget — against tool calls that take hundreds of ms
 #     to minutes, single-digit-ms hooks are noise.
 #
-# Run: ./tests/test-performance.sh   [BUDGET_MS_PER_CALL=25 by default]
+# Run: ./tests/test-performance.sh   [BUDGET_MS_PER_CALL=40 by default]
+# The budget is 40ms, not the ~10ms the hooks actually cost: hook latency is
+# load-sensitive (each iteration forks bash+jq), and a 25ms budget flaked on a
+# busy machine while an idle one measured 8-12ms. 40ms still catches a real
+# regression (an extra jq pass or a network call) without failing on noise.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUDGET_MS="${BUDGET_MS_PER_CALL:-25}"
+BUDGET_MS="${BUDGET_MS_PER_CALL:-40}"
 N="${PERF_ITERATIONS:-100}"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export CC_GUARD_LOG="$TMP/g.jsonl" CC_USAGE_STATE="$TMP/state.json"

@@ -22,7 +22,7 @@ make install       # backup + settings.json merge + CLAUDE.md append + version.l
 make sync          # fast repo -> ~/.claude/cost-control; never touches settings.json/CLAUDE.md
 make status / on / off      # kill switch from the shell
 ./tests/test-hooks.sh       # one suite directly (same for test-merge / test-install / test-performance)
-BUDGET_MS_PER_CALL=40 ./tests/test-performance.sh   # loosen the per-hook latency budget
+BUDGET_MS_PER_CALL=25 ./tests/test-performance.sh   # tighten the per-hook latency budget (default 40)
 ```
 
 There is **no single-test filter** — the suites are flat bash with `ok`/`bad` counters. To
