@@ -3,9 +3,9 @@ title: Claude Code Cost-Control Architecture
 type: ADR / PRD
 status: proposed
 date: 2026-07-14
-revised: 2026-07-16 (v3.1 — spawn-surface correction after independent review)
+revised: 2026-08-09 (v3.2 — re-verified against v2.1.226; nested-spawn ambiguity resolved)
 supersedes: my-claude-extensions (reference only)
-verified-against: code.claude.com/docs (2026-07-16, live fetch)
+verified-against: code.claude.com/docs (2026-08-09, raw-markdown fetch, Claude Code v2.1.226)
 ---
 
 # Claude Code Cost-Control Architecture
@@ -43,8 +43,9 @@ This version folds in a second research pass. Net changes from v1:
   See §6 for the fable lead-session tradeoff this creates.
 - **Nested-spawn coverage:** the model-guard is **replicated into agent
   frontmatter** (`agents/*.md`) — a documented feature (sub-agents.md "Define
-  hooks for subagents") — so spawns made *by* a subagent are gated even if
-  settings-level hooks don't fire in subagent context (ambiguous in docs; §7.11).
+  hooks for subagents"). As of v2.1.226 this is *redundancy*: hooks.md now
+  confirms settings-level hooks fire inside subagents, so the settings gate
+  already covers subagent-originated spawns (§0d, §7.11).
 - **Prompt-cache economics** added as first-class cost hygiene: subagents build
   cold caches on a 5-min TTL; forks reuse the parent's cache; mid-session model
   switches / CLAUDE.md edits / tool-set changes invalidate the cache.
@@ -92,6 +93,37 @@ directly against live docs and **reversed the v3 spawn-gating finding**:
   change on a *verbatim doc quote*; delegated verification without quotes is not
   evidence. The v3 error came from trusting a research pass whose fetches had
   silently truncated.
+
+## 0d. Drift re-verification (v3.2, 2026-08-09) — v2.1.212 → v2.1.226
+
+A `cost-control-verify` run against the installed v2.1.226, using raw-markdown
+doc fetches rather than a summarizing fetch (the 2026-07-17 run caught a
+summarizer false-negative, so raw fetch + local grep is now the method).
+**No executable guardrail change was required** — the `Agent` tool_input schema,
+the `PreToolUse` deny mechanism, the `Agent|Task` matcher, the statusline
+`rate_limits` fields, and the `claude agents --json` schema are all unchanged.
+
+- **The §0/§7.11 nested-spawn ambiguity is RESOLVED.** hooks.md now states that
+  "Hooks from settings files, managed policy settings, and plugins also run
+  inside subagents", with `agent_id`/`agent_type` on the input. The frontmatter
+  replication is demoted from *the* nested gate to redundancy — kept, because
+  **plugin** subagents ignore frontmatter `hooks:` and are covered only by the
+  settings-level gate.
+- **Two fan-out assumptions in this ADR were superseded.** Nesting depth is no
+  longer "fixed at 5, not configurable" — it defaults to **3 layers** and is set
+  by `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`. Concurrency is capped at **20**
+  (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`) — but **not enforced in ultracode
+  sessions**, which also suppress the `Large workflow` warning.
+- **A ceiling this design leaned on is gone:** the 200-subagent-per-session cap
+  was removed in v2.1.224. Nothing bounds lifetime spawn count now, which makes
+  the §4 burn-rate guards the *only* remaining limiter for a long-lived session.
+- **A drill-down capability claimed in §5 does not work as written:** telemetry
+  redacts `agent.name` for user-defined agents to the literal `"custom"`, so the
+  per-agent metric breakdown collapses for this bundle's own agents. Use traces
+  or the `PostToolUse` `tool_response` cost fields instead.
+
+Full detail, with verbatim quotes per claim, in `manifest/CHANGELOG.md`
+(2026-08-09 entry) and `manifest/claims.json`.
 
 ## 1. Context
 
