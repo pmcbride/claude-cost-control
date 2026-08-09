@@ -6,6 +6,93 @@ and which files were patched. Newest at top. Never edit past entries.
 
 ---
 
+## 2026-07-17 — first-install baseline, pinned to v2.1.212
+
+Baseline established for the actually-installed build (`claude --version` →
+`2.1.212`), superseding the unpinned 2026-07-16 doc fetch. Verified live against
+code.claude.com (hooks.md, sub-agents.md, statusline.md, model-config.md) under
+the evidence rule: every verdict below is backed by a verbatim quote stored in
+`claims.json`. The hooks.md verdicts were additionally spot-checked against the
+raw primary source (`curl` of hooks.md) — which caught a summarizer error, see
+below. No subagents were used for this pass.
+
+**No executable change was needed. Zero HITL patches proposed — every hook,
+matcher, threshold, and field probe in the bundle is correct as shipped on
+v2.1.212.** The escalation ladder (70/80/90/94) and the `Agent|Task` PreToolUse
+wiring are unaffected by everything found here.
+
+- **UPGRADED — `spawn-tool-input-schema` UNVERIFIED→CONFIRMED (high).** The most
+  load-bearing open risk in the bundle is now closed. hooks.md publishes the
+  Agent tool-input table (`##### Agent — Spawns a subagent`): `prompt`,
+  `description`, `subagent_type`, and **`model`** ("Optional model alias to
+  override the default"). The guards' primary probes `.tool_input.model` and
+  `.tool_input.subagent_type` are **confirmed correct**, so the documented
+  failure mode (wrong paths → `model=''` → silent allow) is retired. The
+  `.params.model`/`.opts.model` fallbacks are now redundant but harmless — left
+  in place deliberately (they cost nothing and absorb a future rename).
+  *Process note:* the doc-fetch summarizer answered "NOT FOUND" for this table;
+  a raw-source grep found it at hooks.md line ~1455. The skill's spot-check rule
+  is what caught this — do not skip it.
+- **UPGRADED — `explore-agent-model` UNVERIFIED→CONFIRMED (high).** sub-agents.md:
+  "As of v2.1.198, Explore inherits the main conversation's model instead of
+  always running on Haiku", and "define one with `model: haiku` to keep
+  exploration on a lower-cost model". The bundle's `agents/explore.md` is exactly
+  the documented remedy — and on v2.1.212 it is **load-bearing, not decorative**:
+  without it, Explore inherits an Opus/Fable lead session and explores at lead
+  cost.
+- **NEW FACT — `subagent-model-precedence` (v2.1.211, applies to this install).**
+  A per-invocation `model` now survives resume/follow-up; before v2.1.211 resuming
+  dropped it and reverted to frontmatter or the main conversation's model. The
+  old silent revert-to-lead-model-on-resume cost leak is gone. Verdict stays
+  CONFIRMED.
+- **NEW CAVEAT — `available-models-gate` (v2.1.210).** Relevant to this machine
+  specifically (`permissions.defaultMode: "auto"` + Fable lead): if an
+  `availableModels` allowlist excludes Sonnet 5, the auto-mode permission
+  classifier stops running on cheap Sonnet 5 and falls back to the session model,
+  "or on an Opus model when the session runs on Fable 5" — a silent per-decision
+  cost *increase* from a gate meant to save money. **Any allowlist placed here
+  must include `sonnet`.** Folded into the still-deferred managed-settings
+  decision. Verdict stays CONFIRMED.
+- **WORDING DRIFT — `spawn-gating-event` (verdict unchanged: CONFIRMED).** The
+  baseline quoted SubagentStart as "Shows stderr to user only"; the v2.1.212
+  decision-control table now reads "Context only … No blocking or decision
+  control". Same mechanism, new wording — quote refreshed. Also `permissionDecision`
+  now takes a 4th value, `defer` (allow/deny/ask/defer); the guards only emit
+  `deny`, so no change. `TaskCreated` unchanged ("When a task is being created via
+  `TaskCreate`") and additionally documented as taking no matcher.
+- **RE-CONFIRMED, unchanged (quotes refreshed to verbatim):**
+  `statusline-rate-limits` (the `// empty` jq guard the scripts use is the
+  documented recommendation; stdout is captured, never a tty — colors correctly
+  gated on `CC_STATUSLINE_NOCOLOR` only), `agent-frontmatter-hooks` (plugin
+  subagents still ignore frontmatter `hooks`; the bundle's agents live in
+  `~/.claude/agents/`, so they're covered).
+- **STILL PARTIAL — `nested-spawn-hooks`.** Whether settings-level PreToolUse
+  fires inside a subagent remains ambiguous (`agent_id` "present only when the
+  hook fires inside a subagent call" implies yes; no page says so outright). Not
+  load-bearing — the frontmatter-replicated gate covers nested spawns either way.
+  Depth limit now confirmed verbatim: fixed at five, not configurable.
+- **NOT RE-FETCHED this pass** (deliberate token frugality; carrying 2026-07-16
+  verdicts forward, recorded in `claims.json:baseline_scope_note`):
+  `workflow-size-config`, `telemetry-metrics`, `session-controls`,
+  `output-styles`, `hooks-context-injection`, `usage-attribution`,
+  `claude-version-cmd` — all prose/dashboard/doc surfaces, no guardrail behavior.
+- **OPPORTUNITY (not implemented, no change made).** hooks.md now documents
+  `PostToolUse.tool_response` for Agent calls carrying `resolvedModel`
+  (v2.1.174+, "the model the subagent actually runs on, which can differ from the
+  `model` value in `tool_input`"), `totalTokens`, `totalDurationMs`,
+  `totalToolUseCount`, and a `usage{}` breakdown — a documented surface for exact
+  per-subagent cost attribution, which the bundle currently only infers. Caveat:
+  as of v2.1.198 subagents run in the background by default, so an omitted
+  `run_in_background` yields `status: "async_launched"` and **no usage fields**.
+
+Files patched: `manifest/claims.json` (verdicts/quotes/versions + pinned
+baseline + scope note), `manifest/CHANGELOG.md` (this entry),
+`manifest/version.lock` (2.1.212 / verified). No hook, agent, statusline, or
+settings file was touched. Edits were made in the git repo and pushed out with
+`make sync`, per the repo-is-source-of-truth rule.
+
+---
+
 ## 2026-07-16 — external review pass (docs fetched live; version unpinned)
 
 Full independent re-verification of every claim against live code.claude.com
