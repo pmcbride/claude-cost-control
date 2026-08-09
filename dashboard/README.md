@@ -31,12 +31,23 @@ Then enable telemetry for Claude Code (see `telemetry.env.example` — the
 **Metrics** (Prometheus) give aggregate burn by model / session / token-type over
 time — and, verified against docs, also by **subagent**: the
 `claude_code.token.usage` metric carries `agent.name` and `query_source`
-(`"subagent"` vs `"main"`) attributes, so you can `sum by (agent_name)` or split
-main-vs-subagent burn without traces. **Traces** (Tempo) add the full call tree —
-enable `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` and each subagent/stage becomes a
-span in Grafana → Explore → Tempo. (Add a panel:
+attributes. `query_source` is one of `"main"`, `"subagent"`, or `"auxiliary"`, so
+splitting main-vs-subagent burn works without traces.
+
+⚠️ **`agent.name` is redacted for your own agents.** Docs (monitoring-usage.md):
+"Built-in agent names and agents from official-marketplace plugins appear
+verbatim. Other user-defined agent names are replaced with `"custom"`." This
+bundle's `worker`/`reviewer` agents therefore collapse into a single `custom`
+series — you can see *that* custom subagents burned tokens, not *which one*. To
+separate them, use **traces** (spans carry the real call tree) or the per-spawn
+`PostToolUse` `tool_response` fields (`resolvedModel`, `totalTokens`, `usage{}`).
+
+**Traces** (Tempo) add the full call tree — enable
+`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` and each subagent/stage becomes a span in
+Grafana → Explore → Tempo. (Add a panel:
 `sum by (agent_name) (rate(claude_code_token_usage_tokens_total[$__rate_interval]))`
-— adjust the label name to what `:8889/metrics` shows.)
+— adjust the label name to what `:8889/metrics` shows; expect a large `custom`
+bucket per the redaction above.)
 
 ### If panels are empty
 

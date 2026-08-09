@@ -26,9 +26,12 @@ fires on spawn but cannot block — it's used here for audit logging only.
 `TaskCreated` is the task-*list* event (the `TaskCreate` todo tool), unrelated
 to spawns — nothing is registered there. The model-guard is additionally
 replicated into each example agent's frontmatter (a documented feature:
-docs/en/sub-agents "Define hooks for subagents") so nested spawns are gated
-regardless of whether settings-level hooks fire inside subagents (ambiguous in
-current docs). The optional managed-settings `availableModels` allowlist is the
+docs/en/sub-agents "Define hooks for subagents"). As of the v2.1.226 docs,
+settings-level hooks are confirmed to fire inside subagents too ("Hooks from
+settings files, managed policy settings, and plugins also run inside subagents"),
+so the frontmatter copy is now redundancy rather than the sole nested-spawn
+gate — except for **plugin** subagents, which ignore frontmatter `hooks:` and are
+covered only by the settings-level gate. The optional managed-settings `availableModels` allowlist is the
 independent hard backstop, enforced against subagent frontmatter, the Agent
 tool's model param, and `CLAUDE_CODE_SUBAGENT_MODEL` (docs/en/model-config).
 
@@ -168,7 +171,7 @@ Requires `jq` (statusline + hooks + tests) and, for the dashboard, Docker.
 | A guardrail that winds down spikes safely | `hooks/guard-usage-budget.sh` (blocks new work) + `hooks/watchdog-usage.sh` (stops runaway background sessions) |
 | Responses that get terser as usage climbs | `hooks/throttle.sh` (UserPromptSubmit self-throttle) |
 | A hard cap so fable can't be spent by accident | `managed-settings.snippet.json` (`availableModels`) |
-| Catch nested/subagent-originated spawns | frontmatter-replicated gate in `agents/*.md` (documented feature) |
+| Catch nested/subagent-originated spawns | settings-level `PreToolUse` gate (docs-confirmed to fire inside subagents) + frontmatter-replicated gate in `agents/*.md` as redundancy |
 | Control the local/in-session/worktree/cloud dialog | `session-topology-and-controls.md` |
 | A validation layer that auto-updates on Claude Code updates | `hooks/version-check.sh` + `skills/cost-control-verify` + `manifest/claims.json` |
 | Proof this doesn't change normal behavior or add usage | `tests/` (run `./tests/run-all.sh`) |

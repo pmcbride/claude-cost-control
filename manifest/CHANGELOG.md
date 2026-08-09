@@ -6,6 +6,110 @@ and which files were patched. Newest at top. Never edit past entries.
 
 ---
 
+## 2026-08-09 — drift check v2.1.212 → v2.1.226
+
+Triggered by the version-check hook (`.drift` flag present). Verified against
+**raw primary-source markdown** — `curl` of the twelve `code.claude.com/docs/en/*.md`
+pages plus the full changelog across v2.1.213–v2.1.226 — rather than a summarizing
+fetch, because the 2026-07-17 run caught a summarizer false-negative. Every verdict
+below carries a verbatim quote in `claims.json`. No subagents were used.
+
+**No executable guardrail change was required. Zero HITL patches proposed.** The
+`Agent` tool_input schema, the `PreToolUse` deny mechanism, the `Agent|Task`
+matcher, the statusline `rate_limits` fields, and the `claude agents --json`
+fields the watchdog sorts on are all unchanged on v2.1.226. Two **comment-only**
+corrections were made in `hooks/guard-subagent-model.sh` (stale doc quotes in the
+header block; no logic, probes, or thresholds touched). Offline suite re-run green
+(PASS=11/11 hooks, 4/4 performance, all files) and `~/.claude/.usage-state.json`
+holds a live numeric `five_hour_pct`, so the statusline path is confirmed working
+end to end.
+
+- **RESOLVED — `nested-spawn-hooks` PARTIAL→CONFIRMED (low→high).** The
+  longest-standing ambiguity in the manifest is closed. hooks.md now says it
+  outright: *"Hooks from settings files, managed policy settings, and plugins also
+  run inside subagents. When a subagent calls a tool, tool events such as
+  `PreToolUse` and `PostToolUse` fire the same configured hooks as in the main
+  conversation, and the input carries the `agent_id` and `agent_type` common input
+  fields."* The settings-level gate covers subagent-originated spawns. The
+  frontmatter-replicated guard in `agents/*.md` becomes **redundancy rather than
+  the sole nested gate** — kept, since it costs nothing and plugin subagents cut
+  the other way (they ignore frontmatter `hooks:` entirely and rely on the
+  settings gate).
+- **CHANGED — nesting depth, twice, inside this range.** The baseline recorded
+  *"a subagent at depth five … the limit is fixed and not configurable"*. Both
+  halves are superseded: v2.1.217 disabled nesting by default, then v2.1.219 set
+  the default to **3 layers below the main conversation**, configurable via
+  **`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`** (set `1` to disable). At the limit the
+  `Agent` tool is withheld rather than erroring.
+- **NEW CLAIM — `subagent-fanout-caps`.** Four platform ceilings that sit under
+  this bundle's guards, none of which existed in this form at the baseline:
+  **`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`** (default **20**, v2.1.217+); the depth
+  limit above; **`--max-budget-usd`**, which since v2.1.217 denies new spawns *and
+  halts running background subagents* at the cap but is **print-mode only**; and
+  the removal of the 200-spawn lifetime cap.
+- **⚠️ REGRESSION IN COVERAGE — the 200-subagent-per-session cap is GONE**
+  (v2.1.224: *"Removed the 200-subagent-per-session spawn cap; long-running
+  sessions no longer refuse new agents"*). sub-agents.md confirms: *"There's no
+  limit on the total number of subagents Claude can spawn over a session."* A
+  long-lived thin-brain session now has **no built-in lifetime ceiling** — only
+  concurrency, depth, and this bundle's burn-rate guards bound it. Documented in
+  `session-topology-and-controls.md` and `CLAUDE.snippet.md`.
+- **⚠️ ULTRACODE IS EXEMPT FROM TWO SAFETY NETS.** sub-agents.md: *"Sessions with
+  ultracode active are exempt: the limit isn't enforced there"* (concurrency), and
+  workflows.md: *"Sessions with ultracode on don't show the warning"*
+  (Large-workflow). Turning on ultracode removes the concurrency cap **and** the
+  runaway-workflow warning at the same time. Compounding this, statusline
+  `effort.level` reports ultracode as plain `xhigh`, so **no statusline can detect
+  that a session is in this state**.
+- **UPGRADED — `workflow-size-config` PARTIAL→CONFIRMED (medium→high).** The
+  `Large workflow` warning the 2026-07-16 baseline flagged as *"NOT in docs (likely
+  internal heuristic)"* is now published and the researched numbers were exactly
+  right: *"When a workflow schedules more than 25 agents, or its projected token
+  total passes 1.5 million … shows a `Large workflow` warning"* (v2.1.203+).
+- **CORRECTED CONFIG FACT — workflow size is now a settings key.**
+  `settings.snippet.json` asserted *"Not a settings.json key; set it in-app."*
+  That is **false** as of v2.1.219: `workflowSizeGuideline` (`unrestricted|small|
+  medium|large`) is settable in any settings file, **takes precedence over
+  `/config`**, and hides that `/config` row. The default is now `medium` (was
+  `unrestricted` before v2.1.219). Comment rewritten; a commented-out
+  `//workflowSizeGuideline: "small"` line added for the user to enable.
+- **⚠️ CORRECTED DASHBOARD CLAIM — `agent.name` is redacted for your own agents.**
+  monitoring-usage.md: *"Built-in agent names and agents from official-marketplace
+  plugins appear verbatim. Other user-defined agent names are replaced with
+  `\"custom\"`."* The bundle's `worker`/`reviewer` agents therefore collapse into a
+  single `custom` series — the previously-advertised `sum by (agent_name)`
+  per-agent breakdown **does not work for them**. `query_source` also has three
+  values (`main`/`subagent`/`auxiliary`), not two. `dashboard/README.md` corrected
+  with the working alternatives (traces, or the `PostToolUse` `tool_response` cost
+  fields).
+- **CHANGED — `available-models-gate` (v2.1.222) blocked-alias behavior.** The
+  baseline's flat rule ("an excluded subagent value is skipped and the subagent
+  runs on the inherited model") is now only the fallback branch: a blocked
+  **family alias** now substitutes to *"the newest version of that family the
+  allowlist permits"*. A fable-blocking allowlist still behaves as intended (no
+  fable version is permitted, so substitution has nothing to land on), but a
+  version-pinning allowlist now substitutes where it used to fall back. The
+  v2.1.210 "include `sonnet` or the auto-mode classifier gets expensive" caveat
+  from the last pass still stands.
+- **NEW PRECONDITION — `agent-frontmatter-hooks` (v2.1.218).** Project-level
+  agents' frontmatter hooks now require workspace trust for the folder holding the
+  agent file; untrusted, *"the subagent still runs, but Claude Code skips its
+  frontmatter hooks"* with only a debug-log error. **This install is exempt** —
+  *"Hooks from user-level subagents in `~/.claude/agents/` … run without this
+  step"* — but a project-scoped copy of these agents would silently lose its guard.
+- **NEW FACT — `usage-attribution` (v2.1.222).** `/usage` previously *"attributed
+  every subsequent request to that server"* after a single MCP call. Any MCP cost
+  share read from `/usage` before v2.1.222 was inflated; re-measure before using
+  one as a baseline.
+- **RE-VERIFIED UNCHANGED (verbatim re-match, no edits needed):**
+  `spawn-gating-event`, `spawn-tool-input-schema` (the four `tool_input` fields are
+  byte-for-byte identical; `modelsUsed` added on the `PostToolUse` side),
+  `subagent-model-precedence`, `explore-agent-model`, `statusline-rate-limits`,
+  `session-controls` (the `--json` fields `watchdog-usage.sh` depends on),
+  `output-styles`, `hooks-context-injection`, `claude-version-cmd`.
+
+---
+
 ## 2026-07-17 — first-install baseline, pinned to v2.1.212
 
 Baseline established for the actually-installed build (`claude --version` →
