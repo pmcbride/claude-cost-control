@@ -42,7 +42,8 @@ and after install. The only token-bearing additions, all bounded and asserted:
   changes or explicit request
 
 **Performance (test-performance.sh).** Benchmarks each hook 100× and fails if
-the average exceeds `BUDGET_MS_PER_CALL` (default 25ms). Typical results are
+the average exceeds `BUDGET_MS_PER_CALL` (default 40ms — sized for a loaded
+machine; an idle one measures ~8-12ms). Typical results are
 ~10–25ms per call — one `bash`+`jq` subprocess — against tool calls that take
 hundreds of ms to minutes. The budget guard runs on every tool call (matcher
 `*`); the model guard only on spawns; the throttle once per user prompt; the

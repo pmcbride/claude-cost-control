@@ -38,16 +38,31 @@ splitting main-vs-subagent burn works without traces.
 "Built-in agent names and agents from official-marketplace plugins appear
 verbatim. Other user-defined agent names are replaced with `"custom"`." This
 bundle's `worker`/`reviewer` agents therefore collapse into a single `custom`
-series — you can see *that* custom subagents burned tokens, not *which one*. To
-separate them, use **traces** (spans carry the real call tree) or the per-spawn
-`PostToolUse` `tool_response` fields (`resolvedModel`, `totalTokens`, `usage{}`).
+series — you can see *that* custom subagents burned tokens, not *which one*.
+There is **no un-redaction switch for this metric attribute**: as of the
+v2.1.226 docs, `OTEL_LOG_TOOL_DETAILS=1` un-redacts `workflow.name`, tool-span
+attributes, and log-event fields, but the `agent.name` definition on the token
+counter carries no such gate (verified 2026-08-09 — don't burn time hunting one).
+
+Practical splits, best first:
+
+- **By model (the useful proxy):**
+  `sum by (model) (rate(claude_code_token_usage_tokens_total[$__rate_interval]))`
+  — under this bundle's routing rubric (haiku = explore, sonnet = work,
+  opus = review), model ≈ role, and `model` is never redacted.
+- **Main vs subagent burn:** group by `query_source`
+  (`"main"` / `"subagent"` / `"auxiliary"`).
+- **Exact per-agent numbers:** Option A above (`parse_transcripts.py --by agent`
+  reads local transcripts — no redaction), the per-spawn `PostToolUse`
+  `tool_response` fields (`resolvedModel`, `totalTokens`, `usage{}`), or traces:
+  tool-execution spans carry `subagent_type` when `OTEL_LOG_TOOL_DETAILS=1`.
 
 **Traces** (Tempo) add the full call tree — enable
 `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` and each subagent/stage becomes a span in
-Grafana → Explore → Tempo. (Add a panel:
+Grafana → Explore → Tempo. (An
 `sum by (agent_name) (rate(claude_code_token_usage_tokens_total[$__rate_interval]))`
-— adjust the label name to what `:8889/metrics` shows; expect a large `custom`
-bucket per the redaction above.)
+panel still separates BUILT-IN agents — adjust the label name to what
+`:8889/metrics` shows; expect a large `custom` bucket per the redaction above.)
 
 ### If panels are empty
 

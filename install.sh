@@ -81,6 +81,13 @@ done
 run "cp -a '$SRC/output-styles/terse.md' '$CLAUDE_DIR/output-styles/'"
 run "cp -a '$SRC/agents/'*.md '$CLAUDE_DIR/agents/'"
 run "cp -a '$SRC/skills/cost-control-verify' '$SRC/skills/cost-control' '$CLAUDE_DIR/skills/'"
+# Legacy layout cleanup (upgrade path): old installs copied agents/skills/
+# output-styles INTO $DEST. Nothing updates those copies — the active ones live
+# under $CLAUDE_DIR — so they rot and masquerade as authoritative. Remove them.
+# (The pre-copy backup above already preserved anything that was there.)
+for legacy in agents skills output-styles; do
+  [[ -d "$DEST/$legacy" ]] && run "rm -rf '$DEST/$legacy'"
+done
 say "files copied (statusline, hooks, manifest, tests, toggle, docs + snippets, dashboard, project-templates, terse output-style, example agents, verify + /cost-control skills)"
 
 hdr "2. Merge settings -> $CLAUDE_DIR/settings.json"

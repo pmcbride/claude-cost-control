@@ -31,10 +31,28 @@ MODEL_LOG="$HOME/.claude/logs/model-guard.jsonl"
 usage() { sed -n '3,8p' "$0"; exit 2; }
 
 state_summary() {
+  # The single most important fact here is FRESHNESS: guards fail open, so state
+  # older than CC_STATE_MAX_AGE means they are silently DISARMED. Say so.
+  local line updated max_age now age agetxt
   if command -v jq >/dev/null 2>&1 && [[ -f "$STATE_FILE" ]]; then
-    jq -r '"  5h usage: \(.five_hour_pct // "n/a")%   7d: \(.seven_day_pct // "n/a")%   (state written \((.updated_at // 0)) epoch)"' "$STATE_FILE" 2>/dev/null || true
+    line="$(jq -r '"  5h usage: \(.five_hour_pct // "n/a")%   7d: \(.seven_day_pct // "n/a")%"' "$STATE_FILE" 2>/dev/null)" || line="  usage state unreadable"
+    updated="$(jq -r '.updated_at // 0' "$STATE_FILE" 2>/dev/null)" || updated=0
+    max_age="${CC_STATE_MAX_AGE:-900}"
+    if [[ "$updated" =~ ^[0-9]+$ ]] && (( updated > 0 )); then
+      now="$(date +%s)"; age=$(( now - updated )); (( age < 0 )) && age=0
+      if   (( age < 120 ));  then agetxt="${age}s ago"
+      elif (( age < 7200 )); then agetxt="$(( age / 60 ))m ago"
+      else                        agetxt="$(( age / 3600 ))h ago"; fi
+      echo "$line   (state written $agetxt)"
+      # same comparison the guards use (guard-usage-budget.sh: age > MAX_AGE -> allow)
+      if (( age > max_age )); then
+        echo "  ⚠ state older than ${max_age}s — usage guards are DISARMED (fail-open) until a statusline refresh rewrites it"
+      fi
+    else
+      echo "$line   (state timestamp unreadable — guards treat it as stale and DISARM, fail-open)"
+    fi
   else
-    echo "  no usage state file yet (statusline hasn't run)"
+    echo "  no usage state file yet (statusline hasn't run — usage guards are disarmed, fail-open)"
   fi
 }
 

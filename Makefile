@@ -70,6 +70,15 @@ sync:
 	rsync -a $(REPO_DIR)agents/ $(CLAUDE_DIR)/agents/
 	rsync -a $(REPO_DIR)skills/ $(CLAUDE_DIR)/skills/
 	rsync -a $(REPO_DIR)output-styles/terse.md $(CLAUDE_DIR)/output-styles/terse.md
+	@# Legacy layout cleanup: old installs copied agents/skills/output-styles INTO
+	@# the bundle dir. Nothing updates those copies (the active ones live under
+	@# $(CLAUDE_DIR)), so they rot and masquerade as authoritative. Remove them.
+	@for d in agents skills output-styles; do \
+	  if [ -d "$(INSTALL_DIR)/$$d" ]; then \
+	    rm -rf "$(INSTALL_DIR)/$$d"; \
+	    echo "removed legacy $(INSTALL_DIR)/$$d (active copy: $(CLAUDE_DIR)/$$d)"; \
+	  fi; \
+	done
 	@echo "synced repo -> $(INSTALL_DIR) (docs, snippets, dashboard, templates + agents/skills/output-style); settings.json untouched"
 	@$(INSTALL_DIR)/tests/test-hooks.sh >/dev/null 2>&1 \
 	  && echo "post-sync hook tests: PASSED" \

@@ -182,6 +182,17 @@ run_hook "$GUARD_BUDGET" "$(payload PreToolUse Agent haiku)"
 is_deny && ok "ON again: spawn at 95% denied (re-armed, no restart)" || bad "re-arm" "$OUT/$CODE"
 OUT="$(CC_ROOT="$TMP" bash "$TOGGLE" status)"   # capture, don't pipe: grep -q + pipefail = SIGPIPE flake
 printf '%s' "$OUT" | grep -q "cost-control: ON" && ok "status reports ON" || bad "status" "$OUT"
+
+# status must surface state freshness — stale state means the guards are
+# silently disarmed (fail-open), and status is the one place a human looks.
+printf '%s' "$OUT" | grep -q "ago)" && ! printf '%s' "$OUT" | grep -q "DISARMED" \
+  && ok "status: fresh state shows human-readable age, no disarm warning" || bad "status fresh age" "$OUT"
+jq -nc --arg u "$(( $(date +%s) - 4000 ))" \
+  '{five_hour_pct:95, seven_day_pct:10, updated_at:($u|tonumber)}' > "$CC_USAGE_STATE"
+OUT="$(CC_ROOT="$TMP" bash "$TOGGLE" status)"
+printf '%s' "$OUT" | grep -q "DISARMED" \
+  && ok "status: stale state (>CC_STATE_MAX_AGE) warns guards are DISARMED" || bad "status stale warn" "$OUT"
+state 95   # restore fresh state for the suites below
 unset CC_DISABLE_FLAG
 
 echo "== usage-statusline.sh =="
