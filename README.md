@@ -31,9 +31,10 @@ settings-level hooks are confirmed to fire inside subagents too ("Hooks from
 settings files, managed policy settings, and plugins also run inside subagents"),
 so the frontmatter copy is now redundancy rather than the sole nested-spawn
 gate — except for **plugin** subagents, which ignore frontmatter `hooks:` and are
-covered only by the settings-level gate. The optional managed-settings `availableModels` allowlist is the
-independent hard backstop, enforced against subagent frontmatter, the Agent
-tool's model param, and `CLAUDE_CODE_SUBAGENT_MODEL` (docs/en/model-config).
+covered only by the settings-level gate. The optional managed-settings
+`availableModels` allowlist is the independent hard backstop, enforced against
+subagent frontmatter, the Agent tool's model param, and
+`CLAUDE_CODE_SUBAGENT_MODEL` (docs/en/model-config).
 
 ## What you'll actually notice day-to-day (and the kill switch)
 

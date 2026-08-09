@@ -204,7 +204,9 @@ Model rubric (the load-bearing table):
 
 Invariants: subagent model **≤** main-chat model; **never `fable`** for a
 subagent; always set explicit `effort` (`low`/`medium` mechanical, `high` hard
-reasoning); `/config` Dynamic workflow size = `medium` (<15); concurrency cap 2–3.
+reasoning); workflow size = `medium` (<15), now the default and settable via the
+`workflowSizeGuideline` settings key; concurrency cap 2–3 by convention (the
+platform's own ceiling is 20, and is not enforced in ultracode sessions).
 
 ## 6. Consequences & limitations (honest)
 
