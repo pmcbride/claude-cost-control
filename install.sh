@@ -65,10 +65,23 @@ run "chmod +x '$DEST/statusline/'*.sh '$DEST/hooks/'*.sh"
 [[ -d "$SRC/tests" && $DRY -eq 0 ]] && chmod +x "$DEST/tests/"*.sh 2>/dev/null || true
 run "cp -a '$SRC/cost-control.sh' '$DEST/'"
 run "chmod +x '$DEST/cost-control.sh'"
+# Reference docs + snippets. The cost-control-verify skill patches these AT THE
+# INSTALLED PATH (ADR / README / CLAUDE.snippet / session-topology /
+# dashboard/README), so a bundle installed without them leaves that skill
+# editing files that don't exist. dashboard/ and project-templates/ come along
+# for the same reason: they're referenced from the docs and carry no runtime state.
+for doc in README.md ADR-claude-code-cost-control.md CLAUDE.snippet.md \
+           HANDOFF-claude-code.md session-topology-and-controls.md \
+           settings.snippet.json managed-settings.snippet.json \
+           REVIEW-2026-07-16-fable.md _REVIEW-INDEX.md install.sh; do
+  [[ -f "$SRC/$doc" ]] && run "cp -a '$SRC/$doc' '$DEST/'"
+done
+[[ -d "$SRC/dashboard" ]] && run "cp -a '$SRC/dashboard' '$DEST/'"
+[[ -d "$SRC/project-templates" ]] && run "cp -a '$SRC/project-templates' '$DEST/'"
 run "cp -a '$SRC/output-styles/terse.md' '$CLAUDE_DIR/output-styles/'"
 run "cp -a '$SRC/agents/'*.md '$CLAUDE_DIR/agents/'"
 run "cp -a '$SRC/skills/cost-control-verify' '$SRC/skills/cost-control' '$CLAUDE_DIR/skills/'"
-say "files copied (statusline, hooks, manifest, tests, toggle, terse output-style, example agents, verify + /cost-control skills)"
+say "files copied (statusline, hooks, manifest, tests, toggle, docs + snippets, dashboard, project-templates, terse output-style, example agents, verify + /cost-control skills)"
 
 hdr "2. Merge settings -> $CLAUDE_DIR/settings.json"
 if [[ $NO_SETTINGS -eq 1 ]]; then

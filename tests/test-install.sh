@@ -43,6 +43,17 @@ SL_CMD="$(jq -r '.statusLine.command' "$S")"
 [[ "$SL_CMD" == *statusline-wrap.sh* && "$SL_CMD" == *my-fancy-statusline.sh* ]] \
   && ok "pre-existing custom statusline PRESERVED via statusline-wrap" || bad "statusline preserved" "$SL_CMD"
 
+# The cost-control-verify skill patches these AT THE INSTALLED PATH. If install
+# stops shipping them, that skill silently edits files that don't exist.
+VERIFY_TARGETS_OK=1
+for doc in README.md ADR-claude-code-cost-control.md CLAUDE.snippet.md \
+           session-topology-and-controls.md dashboard/README.md; do
+  [[ -f "$CLAUDE_CONFIG_DIR/cost-control/$doc" ]] || { VERIFY_TARGETS_OK=0; MISSING_DOC="$doc"; }
+done
+[[ $VERIFY_TARGETS_OK -eq 1 ]] \
+  && ok "verify-skill doc targets installed (ADR/README/snippet/topology/dashboard)" \
+  || bad "verify-skill doc targets installed" "missing: ${MISSING_DOC:-?}"
+
 cp "$S" "$TMP/after1.json"
 "$ROOT/install.sh" > "$TMP/install2.log" 2>&1 || true
 diff <(jq -S . "$TMP/after1.json") <(jq -S . "$S") >/dev/null \
