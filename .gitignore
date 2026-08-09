@@ -1,2 +1,7 @@
 # Session worktrees live inside the repo; never track them.
 .claude/worktrees/
+
+# Per-install state written by the version-check hook / verify skill.
+# Only version.lock.example is tracked.
+manifest/version.lock
+manifest/.drift

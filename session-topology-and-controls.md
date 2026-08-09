@@ -41,14 +41,24 @@ draws down the same shared Max pool.
 | Disable background subagents (keep everything in-session) | `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` — ⚠️ referenced by sub-agents.md fork-mode notes; verify on your build |
 | Stop `←` from opening agent view | `leftArrowOpensAgents: false` (`/config`) |
 | Stop background sessions from auto-creating worktrees / branches / draft PRs | `worktree.bgIsolation: "none"` |
-| Bias generated workflows smaller | `/config` → Dynamic workflow size = `small` or `medium` |
-| Warn earlier on big workflows | (automatic) `Large workflow` warning fires ≥ ~1.5M projected tokens or ≥25 agents — ⚠️ not in docs; treat as heuristic |
+| Bias generated workflows smaller | `workflowSizeGuideline: "small"` in any settings file (v2.1.219+, takes precedence over `/config` and hides that row) — or `/config` → Dynamic workflow size. Default is now `medium` |
+| Warn earlier on big workflows | (automatic) `Large workflow` warning fires at >25 scheduled agents or >1.5M projected tokens — ✅ now documented (workflows.md, v2.1.203+). Sessions with **ultracode** on are exempt and see no warning |
+| Cap how many subagents run at once | `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (default **20**, v2.1.217+). Spawn #21 fails with `Concurrent subagent limit reached` and Claude is told not to retry. ⚠️ **ultracode sessions are exempt — the limit is not enforced there** |
+| Cap how deeply subagents nest | `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` — default **3** layers below the main conversation (v2.1.219+; was 1 in v2.1.217–218, 5 before). Set to `1` to disable nesting. At the limit the `Agent` tool is withheld entirely |
+| Hard-cap spend in headless runs | `claude -p --max-budget-usd <n>` — subagent spend counts toward the cap; at the cap new spawns are denied **and running background subagents are halted** (v2.1.217+) |
+
+⚠️ **There is no longer any total-per-session subagent cap.** The 200-spawns-per-session
+limit was removed in v2.1.224 ("long-running sessions no longer refuse new agents");
+only the concurrency and depth limits above still bound fan-out. A long session can
+now spawn unbounded subagents over its lifetime — the burn-rate guards, not a
+built-in ceiling, are what stop that.
 
 Practical default for "I want a thin brain that dispatches, not a session
 explosion": keep agent view on (you want visibility), set
-`CLAUDE_DISABLE_ADOPT=1` so backgrounding is predictable, set workflow size to
-`small`, and dispatch implementation work deliberately with `claude --bg --name
-"pr-<x>"` rather than letting `←` background things by reflex.
+`CLAUDE_DISABLE_ADOPT=1` so backgrounding is predictable, set
+`workflowSizeGuideline: "small"` in `~/.claude/settings.json`, and dispatch
+implementation work deliberately with `claude --bg --name "pr-<x>"` rather than
+letting `←` background things by reflex.
 
 ## The "analyze → propose PRs → implement each separately" flow you wanted
 

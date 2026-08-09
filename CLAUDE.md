@@ -72,9 +72,19 @@ v2.1.212). The `.params.model` / `.opts.model` fallbacks are redundant but kept 
 future rename. If those paths ever go wrong the model resolves to `''` and the guard
 **silently allows** — hence the live self-test in `tests/README.md`.
 
-The gate is **also replicated into `agents/*.md` frontmatter**, because whether
-settings.json-level `PreToolUse` fires inside a subagent is ambiguous in the docs. That
-replication is what covers nested spawns either way.
+The gate is **also replicated into `agents/*.md` frontmatter**. As of the v2.1.226 docs this
+is redundancy rather than the primary nested-spawn gate: hooks.md now states that "Hooks from
+settings files, managed policy settings, and plugins also run inside subagents", so the
+settings-level `PreToolUse` gate already covers subagent-originated spawns. Keep the
+replication anyway — it costs nothing, and **plugin** subagents cut the other way (they ignore
+frontmatter `hooks:` entirely and are covered *only* by the settings-level gate). Note also
+that since v2.1.218 project-level frontmatter hooks require workspace trust for the folder
+holding the agent file; user-level `~/.claude/agents/` — where this bundle installs — is exempt.
+
+Nesting defaults to **3 layers** below the main conversation
+(`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`), concurrency to **20**
+(`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`, *not enforced in ultracode sessions*), and since
+v2.1.224 there is **no total-per-session spawn cap** at all.
 
 ### Deny, never rewrite
 

@@ -39,9 +39,16 @@ subagents cheap during a heavy run.
 
 **Bound fan-out.** Workflow agents inherit the *session* model unless a stage
 overrides it — so keep heavy/workflow sessions on Opus (plan-included), not
-Fable (bills credits past the promo allowance). Set `/config` Dynamic workflow
-size to `medium` (<15). Cap concurrent subagents at 2–3 unless there's a named
-reason for more. Never leave subagent chains running unattended.
+Fable (bills credits past the promo allowance). Workflow size defaults to
+`medium` (<15) as of v2.1.219, so that needs no action — set
+`workflowSizeGuideline: "small"` in `~/.claude/settings.json` when you want it
+tighter (that key overrides the `/config` row). Cap concurrent
+subagents at 2–3 unless there's a named reason for more — the platform's own
+ceiling is `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`, default **20**, and it is
+**not enforced at all in ultracode sessions**. Nesting defaults to **3 layers**
+(`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`; set `1` to disable), and since v2.1.224
+there is **no total-per-session spawn cap** at all. Never leave subagent chains
+running unattended.
 
 **Serialize when the 5-hour window is tight.** Parallelism doesn't reduce total
 tokens — it raises the burn *rate*, which is exactly what trips the rolling
@@ -63,18 +70,25 @@ and forces an expensive uncached rebuild. Prefer a **fork** over a fresh named
 subagent when you just need more hands on the same context (a fork reuses the
 parent's cache, system prompt, tools, and model).
 
-**How the spawn gate works (verified vs docs 2026-07-16; re-verify after each
-`claude update`).** A subagent spawn is a `PreToolUse` call on the **`Agent`**
-tool (renamed from `Task` in v2.1.63; `Task` still aliases) — that is the only
-hook surface that can block a spawn. `SubagentStart` fires on spawn but cannot
-block. `TaskCreated` is the task-*list* event, unrelated to spawns. Whether
-settings.json `PreToolUse` hooks also fire for tool calls *inside* a subagent is
-ambiguous in current docs — so the model-guard is replicated in each agent's
-frontmatter (documented: docs/en/sub-agents "Define hooks for subagents"), which
-guarantees nested spawns are gated either way. Version-dependent gotchas:
-`CLAUDE_CODE_SUBAGENT_MODEL=inherit` equals unset (v2.1.196+); the custom
-`Explore` agent pins `model: haiku` so the cheap explorer survives any change to
-the built-in's default.
+**How the spawn gate works (verified vs docs 2026-08-09 / v2.1.226; re-verify
+after each `claude update`).** A subagent spawn is a `PreToolUse` call on the
+**`Agent`** tool (renamed from `Task` in v2.1.63; `Task` still aliases) — that is
+the only hook surface that can block a spawn. `SubagentStart` fires on spawn but
+cannot block (docs: "Context only … No blocking or decision control").
+`TaskCreated` is the task-*list* event, unrelated to spawns. Settings-level
+`PreToolUse` hooks **do** fire for tool calls made inside a subagent — hooks.md
+now states it outright: "Hooks from settings files, managed policy settings, and
+plugins also run inside subagents … tool events such as `PreToolUse` and
+`PostToolUse` fire the same configured hooks as in the main conversation", with
+`agent_id`/`agent_type` identifying the subagent. The frontmatter-replicated
+guard is kept as belt-and-suspenders, and still matters for one case: **plugin**
+subagents ignore frontmatter `hooks:` entirely, so only the settings-level gate
+covers them. Version-dependent gotchas: `CLAUDE_CODE_SUBAGENT_MODEL=inherit`
+equals unset (v2.1.196+); a per-invocation `model` now survives resume (v2.1.211+);
+the custom `Explore` agent pins `model: haiku` so the cheap explorer survives any
+change to the built-in's default; and since v2.1.218 **project-level** agent
+frontmatter hooks require workspace trust for the folder holding the agent file —
+user-level agents in `~/.claude/agents/` (where this bundle installs) are exempt.
 
 ## Verbosity tiering
 

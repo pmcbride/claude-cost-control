@@ -11,30 +11,37 @@
 #   authoritative, and the hook only DENIES the spawns you never want — it never
 #   rewrites a model. Deny-not-rewrite is what preserves your roster.
 #
-# SPAWN SURFACE (verified against code.claude.com docs 2026-07-16):
+# SPAWN SURFACE (re-verified against code.claude.com docs 2026-08-09, v2.1.226):
 #   * A subagent spawn IS a PreToolUse tool call on the `Agent` tool (renamed
 #     from `Task` in v2.1.63; `Task` still works as an alias — sub-agents.md).
 #     PreToolUse blocks via JSON permissionDecision:"deny" (hooks.md).
 #     THIS IS THE ONLY HOOK SURFACE THAT CAN BLOCK A SPAWN.
 #   * `SubagentStart` fires when a subagent is spawned but CANNOT block
-#     (hooks.md exit-code table: "SubagentStart | No | Shows stderr to user
-#     only") and its payload carries agent_id/agent_type but no model. If this
-#     hook is registered there anyway, it only logs.
+#     (hooks.md decision-control table: "SessionStart, Setup, SubagentStart |
+#     Context only | ... No blocking or decision control") and its payload
+#     carries agent_id/agent_type but no model. If this hook is registered
+#     there anyway, it only logs.
 #   * `TaskCreated` is the TASK LIST event ("when a task is being created via
 #     TaskCreate" — hooks.md), NOT a subagent spawn. Do not register this hook
 #     there; if it fires there anyway, it passes through untouched.
+#   * This hook also gates spawns made BY a subagent: hooks.md now states that
+#     "Hooks from settings files, managed policy settings, and plugins also run
+#     inside subagents", with agent_id/agent_type set on the input. Nesting
+#     defaults to 3 layers (CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH).
 #
 # WHAT IT BLOCKS (configurable):
 #   * a spawn whose resolved model matches CC_BLOCK_MODELS (default: fable)
 #   * optionally, a spawn with NO explicit model (CC_REQUIRE_EXPLICIT_MODEL=1)
 #
-# SAFETY: the Agent tool's exact tool_input field layout is not published in the
-# hooks reference (the Agent SDK shows `subagent_type`; sub-agents.md confirms a
-# per-invocation `model` parameter exists), so this hook probes the likely field
-# paths and FAILS OPEN (allows + logs) whenever it can't positively identify a
-# bad spawn. It will never wedge your session on an ambiguous payload. Run once
-# with `claude --debug`, check ~/.claude/logs/model-guard.jsonl, and tighten the
-# paths if your build differs.
+# SAFETY: the Agent tool's tool_input layout IS now published (hooks.md "Tool
+# input schemas" -> "##### Agent": prompt, description, subagent_type, model),
+# and the primary probes below match it exactly as of v2.1.226. The
+# .params.model/.opts.model fallbacks are therefore redundant — kept because
+# they cost nothing and would absorb a future rename. The hook still FAILS OPEN
+# (allows + logs) whenever it can't positively identify a bad spawn, so it will
+# never wedge your session on an unexpected payload. After a `claude update`,
+# check ~/.claude/logs/model-guard.jsonl for allow-entries with an empty model
+# where you expected a value — that is the signature of a schema change.
 #
 # Install: register on PreToolUse with matcher "Agent|Task". See
 # settings.snippet.json. Offline unit tests: tests/test-hooks.sh.
