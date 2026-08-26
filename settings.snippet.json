@@ -10,7 +10,7 @@
 
   "outputStyle": "Terse",
 
-  "//dynamicWorkflowSize": "As of v2.1.219 this IS a settings key: uncomment workflowSizeGuideline below (unrestricted|small|medium|large). It takes precedence over /config -> Dynamic workflow size and hides that row. Default is medium (<15 agents). Advisory only -- Claude Code sends it to the model as advice, not an enforced cap.",
+  "//dynamicWorkflowSize": "As of v2.1.219 this IS a settings key: uncomment workflowSizeGuideline below (unrestricted|small|medium|large). It takes precedence over /config -> Dynamic workflow size and hides that row. Default is medium (<15 agents). Advisory only -- Claude Code sends it to the model as advice, not an enforced cap. Bonus (v2.1.233-era docs): a chosen guideline also REPLACES the Large-workflow warning's 25-agent threshold with its own count, so medium warns at >15 and small at >5.",
   "//workflowSizeGuideline": "small",
 
   "//subagentFanoutEnv": "Platform ceilings, not set here: CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS (default 20, NOT enforced in ultracode sessions) and CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH (default 3 layers; set 1 to disable nesting). The 200-spawns-per-session cap was REMOVED in v2.1.224 -- nothing bounds lifetime spawn count anymore.",

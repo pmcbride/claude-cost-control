@@ -117,8 +117,10 @@ Docs and reality can differ by build. Two layers:
    `rate_limits`). If absent, the statusline schema changed → HITL patch.
 3. **Hooks actually registered:** run `/hooks` (or check `claude --debug`
    startup) and confirm the cost-control hooks are listed for PreToolUse,
-   UserPromptSubmit, SessionStart, SubagentStart/Stop. User settings files are
-   validated STRICTLY — an invalid settings.json kills every hook silently.
+   UserPromptSubmit, SessionStart, SubagentStart/Stop. Settings files are strict
+   JSON: a whole-file syntax/schema error kills every hook — silently in `-p`
+   runs, behind a fix/exit/continue dialog interactively; individually bad
+   entries are skipped with a warning while the rest stays live (v2.1.233 docs).
 4. **Spawn payload (only if the gate self-test failed):** add a temporary logging
    hook that dumps stdin on `PreToolUse`, spawn a subagent, and read the real
    field paths from the dump; update the probes in the guards accordingly.

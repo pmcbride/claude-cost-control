@@ -121,9 +121,11 @@ dashboard/
 `settings.json` (it REPLACES `statusLine` and `outputStyle` with the bundle's —
 previous values stay in the backup), appends the CLAUDE.md block, copies files,
 seeds the version lock, and runs the offline test suite. `--dry-run` to preview,
-`--no-settings` to merge yourself (then DELETE the `//` comment keys — user
-settings files are validated strictly and an invalid file is rejected as a
-whole, killing every hook), `--managed` for the hard-gate command. Then restart
+`--no-settings` to merge yourself (then DELETE the `//` comment keys — settings
+files are strict JSON, and a whole-file syntax/schema error shows a Settings
+Error dialog interactively but is skipped SILENTLY in `-p` runs, killing every
+hook; individually bad entries are merely skipped with a warning since the
+v2.1.233-era docs), `--managed` for the hard-gate command. Then restart
 Claude Code and run `cost-control-verify`. Installing via Claude Code? Hand it
 `HANDOFF-claude-code.md`.
 
