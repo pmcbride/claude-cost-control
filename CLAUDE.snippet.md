@@ -42,7 +42,9 @@ overrides it — so keep heavy/workflow sessions on Opus (plan-included), not
 Fable (bills credits past the promo allowance). Workflow size defaults to
 `medium` (<15) as of v2.1.219, so that needs no action — set
 `workflowSizeGuideline: "small"` in `~/.claude/settings.json` when you want it
-tighter (that key overrides the `/config` row). Cap concurrent
+tighter (that key overrides the `/config` row; since the v2.1.233-era docs a
+chosen guideline also lowers the `Large workflow` warning threshold to its own
+agent count — `medium` warns at >15 instead of >25). Cap concurrent
 subagents at 2–3 unless there's a named reason for more — the platform's own
 ceiling is `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`, default **20**, and it is
 **not enforced at all in ultracode sessions**. Nesting defaults to **3 layers**
@@ -68,9 +70,12 @@ don't switch models mid-session, don't edit CLAUDE.md mid-session, and don't
 mutate the tool set mid-task — each invalidates the cache from that point down
 and forces an expensive uncached rebuild. Prefer a **fork** over a fresh named
 subagent when you just need more hands on the same context (a fork reuses the
-parent's cache, system prompt, tools, and model).
+parent's cache, system prompt, tools, and model). Since v2.1.229, workflow
+fan-outs stagger same-prefix sibling agents so later siblings read the cached
+prompt prefix instead of re-paying it — workflow fan-outs are cheaper than
+equivalent hand-rolled parallel spawns.
 
-**How the spawn gate works (verified vs docs 2026-08-09 / v2.1.226; re-verify
+**How the spawn gate works (verified vs docs 2026-08-26 / v2.1.233; re-verify
 after each `claude update`).** A subagent spawn is a `PreToolUse` call on the
 **`Agent`** tool (renamed from `Task` in v2.1.63; `Task` still aliases) — that is
 the only hook surface that can block a spawn. `SubagentStart` fires on spawn but

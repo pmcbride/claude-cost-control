@@ -6,6 +6,98 @@ and which files were patched. Newest at top. Never edit past entries.
 
 ---
 
+## 2026-08-26 — drift check v2.1.226 → v2.1.233
+
+Triggered by the version-check hook (`.drift` = 2.1.233). Verified against raw
+primary-source markdown (`curl` of 15 `code.claude.com/docs/en/*.md` pages +
+local grep). **Caveat handled explicitly this pass: the live docs track
+v2.1.246, ahead of the installed v2.1.233** — the changelog was read across both
+v2.1.227–233 (in-range) and v2.1.234–246 (to keep post-lock doc statements out
+of the baseline; those are marked POST-LOCK in `claims.json`). No subagents used.
+
+**No executable guardrail change was required by the version drift. One HITL
+patch proposed (install.sh — unrelated to the drift, see below).** The `Agent`
+tool_input schema (4 fields byte-for-byte), the `PreToolUse` deny mechanism,
+the `Agent|Task` matcher, the statusline `rate_limits` fields, and the
+`claude agents --json` fields are all unchanged on v2.1.233. All 16 claims
+remain CONFIRMED (6 verbatim-unchanged, 10 annotated with refinements).
+
+**🔧 FOUND + STOPGAPPED — the INSTALLED offline suite is not self-contained
+post-PR #5.** `test-install.sh` failed 8/13 when run from the installed tree:
+it sandbox-runs `install.sh`, whose `SRC` is the directory containing the
+script — here the installed copy itself, which by PR #5 design no longer
+carries the `agents/`, `skills/`, `output-styles/` source dirs (the legacy
+self-clean removes them from `$DEST`; the true source lives in the
+`claude-cost-control` repo). So the sandboxed install dies at
+`cp $SRC/output-styles/terse.md` and 7 assertions cascade. Same mechanism =
+a real footgun: running `install.sh` from the installed copy (`SRC == DEST`)
+copies the source dirs to `~/.claude/` and then `rm -rf`s its own copies. The
+ACTIVE copies under `~/.claude/{agents,skills,output-styles}` were correct
+throughout (byte-identical to the repo); no guard was ever degraded. STOPGAP
+applied: re-seeded the three dirs in the installed tree from the active copies
+so the installed suite is self-contained again — the next `make sync` /
+`install.sh` will self-clean them and the suite goes red again from this tree.
+The durable fix is a repo design decision, **proposed as HITL, not applied**:
+either drop `agents/skills/output-styles` from the legacy-clean list and ship
+them in the installed bundle, or make `test-install.sh` resolve `SRC` to the
+repo checkout (and have `install.sh` abort with a clear message when `SRC`
+lacks the source dirs).
+
+- **DOCS RESTRUCTURE (affects future verifies, not behavior).** The settings key
+  reference moved `settings.md` → `settings-reference.md`, and managed-settings
+  delivery/paths moved to a new `managed-settings.md` page (per-OS paths
+  unchanged verbatim; the legacy Windows `ProgramData` path is explicitly not
+  read). `doc_urls`/`verify_sources` updated on `workflow-size-config`,
+  `available-models-gate`, and the top-level list.
+- **⚠️ CHANGED — the Large-workflow warning threshold now tracks your chosen
+  size guideline.** workflows.md: *"If you choose a size guideline yourself, its
+  agent count replaces the 25-agent threshold. The built-in default guideline
+  leaves the threshold at 25."* With this install's explicit `medium` (<15), the
+  warning fires at **>15 scheduled agents**, not >25. The 1.5M projected-token
+  trigger and the ultracode exemption are unchanged.
+- **⚠️ KNOWN PLATFORM BUG ON THIS BUILD — stale rate-limit % after an idle
+  reset.** Fixed post-lock in v2.1.243: *"the status line rate_limits fields and
+  /usage still showing a rate-limit window's pre-reset usage percentage after
+  the window reset while the session was idle."* On v2.1.233,
+  `five_hour_pct` can read stale-high until the next API response, so
+  `throttle.sh`/`guard-usage-budget.sh` may briefly over-throttle right after a
+  window reset. Conservative direction; no guard change.
+- **CORRECTED — settings-file validation is not flat "reject the whole file".**
+  settings.md now splits **Settings Error** (whole file invalid → dialog:
+  fix/exit/continue-without; `-p` runs skip the file silently) from **Settings
+  Warning** (individual bad entries skipped, rest of the file **stays in
+  effect**). The silently-dead-hooks failure mode survives only for whole-file
+  JSON/schema errors headless or via continue-without. `README.md` and the
+  skill's self-test note reworded; `available-models-gate` claim annotated.
+- **REFINED — PostToolUse usage fields are NOT a per-subagent rollup.** hooks.md
+  now states `totalTokens`/`usage` *"cover the final request only"* and points to
+  telemetry counters filtered to `query_source: "subagent"` for cost rollups.
+  Also v2.1.232: non-teammate spawns in interactive sessions now run in the
+  **background by default** (fork on by default), so `tool_response` is usually
+  `async_launched` with no usage fields at all.
+- **NOTED — TaskCreate/TodoWrite tools removed by default on newer models**
+  (v2.1.233; `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` restores). `TaskCreated`
+  effectively never fires on this install's models; zero wiring impact.
+- **NOTED — workflow fan-outs now stagger same-prefix siblings for prompt-cache
+  reuse** (v2.1.229, `CLAUDE_CODE_WORKFLOW_PREFIX_STAGGER_MS=0` disables) —
+  softens the cold-cache write premium for workflow fan-outs specifically.
+- **POST-LOCK heads-ups recorded in claims (apply only after the next update):**
+  v2.1.234 removed the "Default teammate model" `/config` setting (teammates use
+  the leader's model unless the spawn names one — keep explicit models on
+  teammate specs); v2.1.243 adds `promptCacheTtl`/`subagentPromptCacheTtl`
+  (API-key/cloud-provider only) and `modelPricing`, plus per-subagent
+  model+effort in `/tasks`.
+
+Self-test results on v2.1.233 after the repairs: offline suite fully green —
+test-hooks 57/57, test-merge 11/11, test-install 13/13, test-performance 4/4.
+Live spawn gate: an `Agent` spawn with `model: fable` was DENIED and logged
+(`model-guard.jsonl`: `{"event":"PreToolUse","tool":"Agent","model":"fable",
+"action":"deny"}`) — the hook itself fired (no availableModels gate installed,
+so the denial is attributable to the hook). Statusline path live:
+`~/.claude/.usage-state.json` held numeric `five_hour_pct` (42). All five hook
+events (PreToolUse, UserPromptSubmit, SessionStart, SubagentStart/Stop) present
+in `settings.json`. Lock bumped to 2.1.233, `.drift` cleared.
+
 ## 2026-08-09 — drift check v2.1.212 → v2.1.226
 
 Triggered by the version-check hook (`.drift` flag present). Verified against
