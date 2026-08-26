@@ -64,22 +64,18 @@ sync:
 	  $(REPO_DIR)hooks $(REPO_DIR)statusline $(REPO_DIR)tests $(REPO_DIR)manifest \
 	  $(INSTALL_DIR)/
 	rsync -a --delete $(REPO_DIR)dashboard $(REPO_DIR)project-templates $(INSTALL_DIR)/
+	@# Ship the source dirs inside the bundle (--delete = replaced wholesale, so
+	@# the in-bundle copies can never drift from the repo). Keeps the installed
+	@# tree a complete install source with a self-contained offline suite. The
+	@# ACTIVE runtime copies still live under $(CLAUDE_DIR) and are synced below.
+	rsync -a --delete $(REPO_DIR)agents $(REPO_DIR)skills $(REPO_DIR)output-styles $(INSTALL_DIR)/
 	rsync -a $(addprefix $(REPO_DIR),$(SYNC_DOCS)) $(INSTALL_DIR)/
 	install -m 0755 $(REPO_DIR)cost-control.sh $(INSTALL_DIR)/cost-control.sh
 	chmod +x $(INSTALL_DIR)/hooks/*.sh $(INSTALL_DIR)/statusline/*.sh $(INSTALL_DIR)/tests/*.sh $(INSTALL_DIR)/install.sh
 	rsync -a $(REPO_DIR)agents/ $(CLAUDE_DIR)/agents/
 	rsync -a $(REPO_DIR)skills/ $(CLAUDE_DIR)/skills/
 	rsync -a $(REPO_DIR)output-styles/terse.md $(CLAUDE_DIR)/output-styles/terse.md
-	@# Legacy layout cleanup: old installs copied agents/skills/output-styles INTO
-	@# the bundle dir. Nothing updates those copies (the active ones live under
-	@# $(CLAUDE_DIR)), so they rot and masquerade as authoritative. Remove them.
-	@for d in agents skills output-styles; do \
-	  if [ -d "$(INSTALL_DIR)/$$d" ]; then \
-	    rm -rf "$(INSTALL_DIR)/$$d"; \
-	    echo "removed legacy $(INSTALL_DIR)/$$d (active copy: $(CLAUDE_DIR)/$$d)"; \
-	  fi; \
-	done
-	@echo "synced repo -> $(INSTALL_DIR) (docs, snippets, dashboard, templates + agents/skills/output-style); settings.json untouched"
+	@echo "synced repo -> $(INSTALL_DIR) (docs, snippets, dashboard, templates, in-bundle agents/skills/output-styles + active copies under $(CLAUDE_DIR)); settings.json untouched"
 	@$(INSTALL_DIR)/tests/test-hooks.sh >/dev/null 2>&1 \
 	  && echo "post-sync hook tests: PASSED" \
 	  || { echo "post-sync hook tests: FAILED — run $(INSTALL_DIR)/tests/test-hooks.sh"; exit 1; }

@@ -43,6 +43,17 @@ them in the installed bundle, or make `test-install.sh` resolve `SRC` to the
 repo checkout (and have `install.sh` abort with a clear message when `SRC`
 lacks the source dirs).
 
+**Addendum (2026-08-26, same day — HITL resolved, option 1 chosen by Patrick,
+shipped as PR #7):** `install.sh` and `make sync` now ship
+`agents/skills/output-styles` INSIDE the bundle, replaced wholesale on every
+install/sync (`rm -rf` + `cp -a` / `rsync --delete`) so the in-bundle copies
+can never drift from the repo — preserving the anti-rot intent of the old
+cleanup while keeping the installed tree a complete install source with a
+self-contained offline suite. `install.sh` skips the ship step when
+`SRC == DEST` (resolved via `pwd -P`), closing the self-delete footgun.
+`test-install.sh` now asserts the dirs are present AND that a pre-planted
+stale in-bundle copy is replaced. The stopgap re-seed above is superseded.
+
 - **DOCS RESTRUCTURE (affects future verifies, not behavior).** The settings key
   reference moved `settings.md` → `settings-reference.md`, and managed-settings
   delivery/paths moved to a new `managed-settings.md` page (per-OS paths
