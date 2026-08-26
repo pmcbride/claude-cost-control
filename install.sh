@@ -47,6 +47,16 @@ run() { if [[ $DRY -eq 1 ]]; then printf '  [dry-run] %s\n' "$*"; else eval "$*"
 
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required (brew install jq)."; exit 1; }
 
+# Refuse to install the bundle onto itself: with SRC == DEST the in-place cp
+# calls below fail on identical paths, and there is nothing to install anyway.
+# (The ship step later also guards the source dirs against rm-then-copy, so
+# this abort is legibility; that guard is the data protection.)
+if [[ -d "$DEST" && "$(cd "$SRC" && pwd -P)" == "$(cd "$DEST" && pwd -P)" ]]; then
+  echo "ERROR: SRC == DEST ($DEST) — you are running install.sh from the installed bundle." >&2
+  echo "Run it from a repo checkout instead (git clone pmcbride/claude-cost-control)." >&2
+  exit 1
+fi
+
 # ---- OS / managed-settings path ----
 case "$(uname -s)" in
   Darwin) MANAGED_PATH="/Library/Application Support/ClaudeCode/managed-settings.json";;
@@ -81,14 +91,22 @@ done
 run "cp -a '$SRC/output-styles/terse.md' '$CLAUDE_DIR/output-styles/'"
 run "cp -a '$SRC/agents/'*.md '$CLAUDE_DIR/agents/'"
 run "cp -a '$SRC/skills/cost-control-verify' '$SRC/skills/cost-control' '$CLAUDE_DIR/skills/'"
-# Legacy layout cleanup (upgrade path): old installs copied agents/skills/
-# output-styles INTO $DEST. Nothing updates those copies — the active ones live
-# under $CLAUDE_DIR — so they rot and masquerade as authoritative. Remove them.
-# (The pre-copy backup above already preserved anything that was there.)
-for legacy in agents skills output-styles; do
-  [[ -d "$DEST/$legacy" ]] && run "rm -rf '$DEST/$legacy'"
-done
-say "files copied (statusline, hooks, manifest, tests, toggle, docs + snippets, dashboard, project-templates, terse output-style, example agents, verify + /cost-control skills)"
+# Ship the source dirs INSIDE the bundle too, so the installed tree is a
+# complete install source and its offline suite (tests/test-install.sh) is
+# self-contained. Replaced WHOLESALE on every install so the in-bundle copies
+# can never drift from $SRC (the rot that the pre-2026-08 legacy cleanup
+# guarded against). The ACTIVE runtime copies still live under $CLAUDE_DIR.
+# Skipped when installing from the bundle itself (SRC == DEST): the dirs are
+# already in place, and rm-then-copy would destroy the source being copied.
+SRC_REAL="$(cd "$SRC" && pwd -P)"
+DEST_REAL="$( [[ -d "$DEST" ]] && cd "$DEST" && pwd -P || echo "$DEST" )"
+if [[ "$SRC_REAL" != "$DEST_REAL" ]]; then
+  for shipped in agents skills output-styles; do
+    [[ -d "$DEST/$shipped" ]] && run "rm -rf '$DEST/$shipped'"
+    run "cp -a '$SRC/$shipped' '$DEST/'"
+  done
+fi
+say "files copied (statusline, hooks, manifest, tests, toggle, docs + snippets, dashboard, project-templates, terse output-style, example agents, verify + /cost-control skills — agents/skills/output-styles also shipped inside the bundle)"
 
 hdr "2. Merge settings -> $CLAUDE_DIR/settings.json"
 if [[ $NO_SETTINGS -eq 1 ]]; then

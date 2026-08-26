@@ -17,8 +17,9 @@ cat > "$CLAUDE_CONFIG_DIR/settings.json" <<'EOF'
 {"model":"opus","statusLine":{"type":"command","command":"~/my-fancy-statusline.sh --compact"},"hooks":{"Stop":[{"hooks":[{"type":"command","command":"~/my-notify.sh"}]}]},"env":{"MY_VAR":"keepme"}}
 EOF
 
-# legacy-layout remnant that must be REMOVED: pre-2026-07 installs copied
-# skills/agents/output-styles into the bundle dir, where they rot unsynced.
+# pre-existing in-bundle copy that must be REPLACED WHOLESALE (anti-rot): the
+# install ships skills/agents/output-styles inside the bundle, always replacing
+# whatever was there so in-bundle copies can never drift from SRC.
 mkdir -p "$CLAUDE_CONFIG_DIR/cost-control/skills/cost-control"
 echo "stale legacy copy" > "$CLAUDE_CONFIG_DIR/cost-control/skills/cost-control/SKILL.md"
 
@@ -59,9 +60,14 @@ done
   && ok "verify-skill doc targets installed (ADR/README/snippet/topology/dashboard)" \
   || bad "verify-skill doc targets installed" "missing: ${MISSING_DOC:-?}"
 
-[[ ! -d "$CLAUDE_CONFIG_DIR/cost-control/skills" && ! -d "$CLAUDE_CONFIG_DIR/cost-control/agents" ]] \
-  && ok "legacy in-bundle skills/agents copies removed on upgrade" \
-  || bad "legacy copies removed" "$(ls "$CLAUDE_CONFIG_DIR/cost-control" 2>/dev/null)"
+[[ -d "$CLAUDE_CONFIG_DIR/cost-control/skills" && -d "$CLAUDE_CONFIG_DIR/cost-control/agents" && -d "$CLAUDE_CONFIG_DIR/cost-control/output-styles" ]] \
+  && ok "source dirs shipped in the bundle (installed tree is a valid install SRC)" \
+  || bad "source dirs shipped in bundle" "$(ls "$CLAUDE_CONFIG_DIR/cost-control" 2>/dev/null)"
+if grep -q "stale legacy copy" "$CLAUDE_CONFIG_DIR/cost-control/skills/cost-control/SKILL.md" 2>/dev/null; then
+  bad "stale in-bundle copy replaced wholesale" "planted stale content survived the install"
+else
+  ok "stale in-bundle copy replaced wholesale (no rot)"
+fi
 
 cp "$S" "$TMP/after1.json"
 "$ROOT/install.sh" > "$TMP/install2.log" 2>&1 || true
