@@ -116,6 +116,13 @@ printf '%s' "$out"
 fi  # end of render (skipped in state-only mode)
 
 # ---- persist state for the guardrail hook (best-effort, never fail the line) ----
+# NOTE (fixed 2026-09-08): each value MUST wrap its whole pipeline in parens
+# before `// null`. Written as `$fp|select(.!="")|tonumber? // null`, an empty
+# $fp makes `select` yield NOTHING, the pipeline is already empty when `//` is
+# reached, and jq then emits ZERO results for the entire object — a 0-byte state
+# file, losing context_pct and model too. That turned routine now that v2.1.266
+# documents "Claude Code drops a window once its resets_at time passes", so an
+# absent five_hour is expected, not just a non-subscriber case.
 {
   mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null || true
   tmp="$(mktemp "${STATE_FILE}.XXXX" 2>/dev/null)" || tmp=""
@@ -124,10 +131,10 @@ fi  # end of render (skipped in state-only mode)
       --arg fp "${five_i:-}" --arg fr "${five_reset:-}" \
       --arg sp "${seven_i:-}" --arg ctx "${ctx_i:-}" \
       --arg model "${model:-}" --arg updated "$(date +%s)" \
-      '{five_hour_pct: ($fp|select(.!="")|tonumber? // null),
-        five_hour_resets_at: ($fr|select(.!="")|tonumber? // null),
-        seven_day_pct: ($sp|select(.!="")|tonumber? // null),
-        context_pct: ($ctx|select(.!="")|tonumber? // null),
+      '{five_hour_pct: (($fp|select(.!="")|tonumber?) // null),
+        five_hour_resets_at: (($fr|select(.!="")|tonumber?) // null),
+        seven_day_pct: (($sp|select(.!="")|tonumber?) // null),
+        context_pct: (($ctx|select(.!="")|tonumber?) // null),
         model: $model, updated_at: ($updated|tonumber)}' \
       > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATE_FILE" 2>/dev/null || rm -f "$tmp" 2>/dev/null
   fi

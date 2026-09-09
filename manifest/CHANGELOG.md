@@ -6,6 +6,257 @@ and which files were patched. Newest at top. Never edit past entries.
 
 ---
 
+## 2026-09-08 — drift check v2.1.246 → v2.1.266
+
+Triggered by the version-check hook (`.drift` = 2.1.266). Verified against raw
+primary-source markdown (curl of 15 `code.claude.com/docs/en/*.md` pages + local
+grep). Live docs track **v2.1.266** — binary and docs aligned, no POST-LOCK
+bracketing needed. No subagents used.
+
+**⚠️ FIRST VERDICT CHANGE IN THE BUNDLE'S HISTORY, AND IT IS LOAD-BEARING.**
+`subagent-model-precedence` goes **CONFIRMED → CHANGED**. Fifteen of sixteen
+claims re-matched verbatim; this one was reversed by the platform.
+
+### The change
+
+**v2.1.251 demoted `CLAUDE_CODE_SUBAGENT_MODEL` from an override to a default.**
+sub-agents.md now resolves, verbatim:
+
+> 1. The per-invocation `model` parameter
+> 2. The subagent definition's `model` frontmatter, where `inherit` selects the main conversation's model
+> 3. The `CLAUDE_CODE_SUBAGENT_MODEL` environment variable, when you set it to a model alias or model ID
+> 4. The main conversation's model
+
+…followed by the explicit retraction: *"Before v2.1.251,
+`CLAUDE_CODE_SUBAGENT_MODEL` came first in this order and overrode both the
+per-invocation parameter and the frontmatter, including `model: inherit`."*
+The old semantics moved to **`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`** (v2.1.257+),
+which *"ignores the `model` field of every subagent definition, including the
+built-in Explore and Plan subagents"*; set alone it pins every subagent to the
+**main conversation's** model — a footgun on an Opus/Fable lead. Forks and
+`model: inherit` skills stay on the main model either way.
+
+**This bundle was designed around the old rule.** Its founding premise — "you
+cannot express *default cheap, let frontmatter win* with that env var, so here is
+a deny-hook instead" — no longer holds. The hook is still the right tool (it
+denies rather than rewrites, and covers spawns the env var can't reach), but the
+env var is now *also* a legitimate cheap floor.
+
+### 🔴 HITL — proposed, NOT applied
+
+`hooks/guard-subagent-model.sh:91` and `hooks/guard-usage-budget.sh:88` both do:
+
+```bash
+[[ -n "${CLAUDE_CODE_SUBAGENT_MODEL:-}" && "${CLAUDE_CODE_SUBAGENT_MODEL}" != "inherit" ]] && model="${CLAUDE_CODE_SUBAGENT_MODEL}"
+```
+
+…unconditionally overwriting the parsed `tool_input.model` with the env var,
+mirroring the pre-v2.1.251 precedence. On this build that mis-resolves **in both
+directions**:
+
+| Env var | Spawn asks for | Actually runs | Guard evaluates | Result |
+|---|---|---|---|---|
+| `haiku` | `fable` (explicit) | **fable** | haiku | **ALLOW-WRONG** — the gate fails open on the one model it exists to block |
+| `fable` | `haiku` (explicit) | **haiku** | fable | **DENY-WRONG** — a legitimate cheap spawn is refused |
+
+**Blast radius today: zero.** `CLAUDE_CODE_SUBAGENT_MODEL` is unset both in
+`~/.claude/settings.json` and in the live environment, so the line was a no-op and
+the guards read `tool_input.model` exactly as they should. The hole would have
+turned live the moment the (now newly-recommended) global default was set.
+
+**✅ CONFIRMED BY THE USER AND APPLIED THIS PASS.** Both guards now resolve:
+explicit `tool_input.model` wins; the env var applies only when no explicit model
+was passed; `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` restores the old unconditional
+override (`0`/`false`/`no`/`off`/empty read as off). `tests/test-hooks.sh`'s single
+old assertion was replaced by five: env-does-not-override-explicit ·
+env-as-default-when-no-model · `_FORCE=1` overrides · `_FORCE=0` is off ·
+`inherit == unset`. Suite green at **61/11/14/4 PASS, 0 FAIL**.
+
+Residual known limit, documented in the hook comment: in the no-explicit-model
+branch, frontmatter still outranks the env var and the hook cannot see frontmatter
+— so a deny-wrong remains possible *only* if `CLAUDE_CODE_SUBAGENT_MODEL` itself
+names a blocked model, which the routing policy forbids anyway.
+
+### 🐞 Bug found by the live self-test (fixed this pass)
+
+Step 2 of the skill's self-test — *"confirm `~/.claude/.usage-state.json` is being
+written with a numeric `five_hour_pct`"* — found the live file at **0 bytes**. It
+was not a Claude Code schema change; it was a latent jq bug in
+`statusline/usage-statusline.sh`, and **v2.1.266 is what made it routine**.
+
+Each state value was written as `$fp|select(.!="")|tonumber? // null`. With an
+empty `$fp`, `select` yields *nothing*, so the pipeline is already empty when `//`
+is reached and jq emits **zero results for the entire object** — exit 0, no
+output. The atomic `mv` then installed an empty file, taking `context_pct`,
+`model` and `updated_at` down with the absent rate-limit window. Fixed by
+parenthesizing each pipeline before the alternative:
+`(($fp|select(.!="")|tonumber?) // null)`.
+
+Latent for the bundle's whole life, because an absent `rate_limits` used to mean
+"not a Pro/Max subscriber". v2.1.266 documents that a window is **dropped once its
+`resets_at` passes**, so absence is now a normal post-reset state every session
+hits. Failure direction was always fail-open (both guards exit 0 on unreadable
+state), so nothing was ever over-throttled — the cost was silently losing *all*
+guard state after each window reset. Two regression tests added; suite now
+**63/11/14/4 PASS**.
+
+### Other in-range deltas (safe updates applied)
+
+- **➕ New blocking hook surface — `PreModelSwitch` / `PostModelSwitch`** (v2.1.251).
+  `PreModelSwitch` takes `permissionDecision` (allow/deny/ask) or `decision: "block"`
+  and *"Blocks the model switch and shows stderr to the user"*; matcher runs on a
+  canonical name derived from `to_model`. The missing lever for "don't drift onto
+  Fable mid-session". **Not registered by this bundle** — recorded as available.
+  Two caveats a future implementation must honor: Claude Code *"doesn't run
+  PreModelSwitch hooks for switches it makes on its own, such as an automatic model
+  fallback or restoring the model when you resume a session"*, and when it can't
+  canonicalize the target it *"runs every PreModelSwitch hook regardless of
+  matcher"*, so a blocking hook must read `to_model` from stdin. Note it also
+  fails **closed**: a hook canceled at its timeout blocks the switch.
+- **➕ Statusline gained a whole `prompt_cache` object** (v2.1.251; `last_miss_cause`
+  / `miss_causes` v2.1.260) — `warm`, `ttl`, `expires_at`, `hit_ratio`, `misses`,
+  `miss_recache_tokens`, `recache_tokens_if_cold`, and a named cause for the last
+  miss. Main conversation only: *"Claude Code doesn't count subagent requests in
+  these statistics."* Mirrored in `/cost` as the `Prompt cache (main)` line. The
+  bundle's prompt-cache-hygiene guidance was previously unverifiable at runtime;
+  it now is. Candidate enhancement for `usage-statusline.sh`, not a correction.
+- **⚠️ Statusline presence rule tightened** — *"Claude Code drops a window once its
+  `resets_at` time passes."* The post-reset state is **absence, not zero**. The
+  scripts' `// empty` guard and `MAX_AGE` staleness check already handle it; this
+  is now the documented reason "missing" must never be read as "fine". Also new:
+  `rate_limits.spend_limit` (gateway-only, and its `used_percentage` **can exceed
+  100**) — N/A here, but any future clamp must not assume a 0–100 range.
+- **⚠️ Managed settings no longer fail quiet** (v2.1.259) — *"When a managed
+  settings file, drop-in file, MDM plist, or HKLM registry value is present but
+  can't be parsed as a JSON object, Claude Code refuses to start."* Entry-level
+  tolerance is unchanged (the `//`-comment keys stay safe), but a malformed **file**
+  now bricks every session on the machine instead of silently un-enforcing the
+  allowlist. `managed-settings.snippet.json`'s `//VALIDATION` note rewritten:
+  validate the JSON *before* placing it.
+- **➕ `experimental.cacheTtl` agent frontmatter** (v2.1.248) — `5m` or `1h`, read
+  only from subagent files, `1h` ignored while the subscription is on usage
+  credits. Not applied to `agents/*.md` (frontmatter change = HITL, and the benefit
+  is workload-specific); documented instead.
+- **Fable 5.1 is the default Fable model** (v2.1.257) — 1M context, $10/$50 per
+  Mtok, $0.25/Mtok cache reads. Makes the `availableModels` version-prefix rule
+  load-bearing: `claude-fable-5` permits **both** 5 and 5.1; `claude-fable-5-1`
+  permits 5.1 only. v2.1.260 also fixed `model: fable` agents silently running at
+  200K context despite a `[1m]` pin.
+- **Subagent 404 → fallback chain** (v2.1.247) — a subagent that 404s on its first
+  call no longer dies; it walks the session's fallback model chain. A cheap model
+  that goes missing now *silently upgrades* instead of failing loudly;
+  `resolvedModel` / `modelsUsed` in PostToolUse is the only way to see it.
+- **Background commands from subagents are now unbounded in time** (v2.1.260) —
+  the one-hour limit was removed.
+- **New session controls** added to `session-topology-and-controls.md`:
+  `--restricted` / `CLAUDE_CODE_RESTRICTED=1` (v2.1.248 — note it *"ignores user,
+  project and local settings files"*, so it also disables this bundle's hooks),
+  `--permission-prompts none` (v2.1.259), `bashOutputMaxChars` /
+  `taskOutputMaxChars` (v2.1.261), `/skill-doctor` (v2.1.261).
+- **Workflow re-spend fixes**: v2.1.266 resume-with-missing-journal now errors
+  instead of rerunning every agent; v2.1.260 stopped restarting workflow subagents
+  as stalled during long compactions and rejects unsatisfiable `agent({schema})`
+  up front; v2.1.259 stopped duplicate agents on resume-during-exit. v2.1.248 cut
+  the Workflow tool description from ~5.7k to ~1k tokens.
+- Cosmetic doc churn, no impact: the hooks decision table's Context-only row is now
+  "SessionStart, SubagentStart, PostModelSwitch" (Setup moved to the no-decision
+  row).
+
+### Re-matched verbatim (all still CONFIRMED)
+
+The `Agent` tool_input 4-field table · `PreToolUse | permissionDecision
+(allow/deny/ask/defer)` · SubagentStart Context-only / no blocking · the exit-2
+wording · settings-hooks-fire-in-subagents (both pages) · depth-3 / concurrency-20
++ ultracode exemption / no lifetime cap · `workflowSizeGuideline` +
+threshold-tracks-guideline · the three managed paths + legacy-ProgramData
+exclusion · `claude agents --json` fields · `agent.name` → `"custom"` redaction ·
+`--max-budget-usd` · `autoContinueAtUsageLimit` default `true` · output-style
+frontmatter · `--version`.
+
+**Files patched (safe):** `manifest/claims.json`, `CLAUDE.snippet.md`,
+`settings.snippet.json`, `managed-settings.snippet.json`, `README.md`,
+`ADR-claude-code-cost-control.md`, `session-topology-and-controls.md`.
+**Files patched (HITL, confirmed):** `hooks/guard-subagent-model.sh`,
+`hooks/guard-usage-budget.sh`, `statusline/usage-statusline.sh`, `tests/test-hooks.sh`.
+**Also synced:** `~/.claude/CLAUDE.md` (live global instructions carried the same
+now-false precedence claim; updated from `CLAUDE.snippet.md`).
+**Tests:** `tests/run-all.sh` green before (57/11/14/4) and after (63/11/14/4),
+0 FAIL. **Lock:** `pinned_version` 2.1.266, `status` `verified`, `.drift` cleared.
+
+---
+
+## 2026-08-26 (b) — drift check v2.1.233 → v2.1.246
+
+Triggered by the version-check hook (`.drift` = 2.1.246), same day as the
+v2.1.233 pass. Verified against raw primary-source markdown (curl of 15
+`code.claude.com/docs/en/*.md` pages + local grep). The live docs track
+**exactly v2.1.246** this time — binary and docs aligned, so the morning pass's
+POST-LOCK bracketing is retired: its post-lock items are now in-range and were
+promoted. No subagents used.
+
+**No executable guardrail change required; zero HITL patches.** Every
+load-bearing quote re-matched verbatim: the `Agent` tool_input 4-field table,
+the `PreToolUse` `permissionDecision (allow/deny/ask/defer)` row, the
+`SessionStart/Setup/SubagentStart` Context-only row, the exit-code-2 wording,
+settings-hooks-fire-in-subagents (both hooks.md and sub-agents.md), depth-3 /
+concurrency-20 / no-lifetime-cap, the statusline `rate_limits` fields + presence
+rule + capture note, `workflowSizeGuideline` + threshold-tracks-guideline,
+the three managed-settings paths, the Settings Error/Warning split,
+`claude agents --json` fields, `agent.name` redaction, `--max-budget-usd`, and
+`--version`. All 16 claims remain CONFIRMED.
+
+- **✅ BUG CLEARED (was ⚠️ on v2.1.233)** — the stale rate-limit-% after an idle
+  window reset is **fixed on this build** (v2.1.243: *"Fixed the status line
+  rate_limits fields and /usage still showing a rate-limit window's pre-reset
+  usage percentage after the window reset while the session was idle"*). The
+  brief post-reset over-throttle window in `throttle.sh`/`guard-usage-budget.sh`
+  is gone. Bonus v2.1.246 fix: statusline cost/duration no longer reset to zero
+  after visiting the agents view.
+- **⚠️ PROMOTED IN-RANGE — teammate model defaults to the LEADER's model**
+  (v2.1.234: *"Removed the 'Default teammate model' setting from /config;
+  agent-team teammates now use the leader's model unless the spawn names one"*).
+  On an Opus/Fable lead, an unspecified teammate now bills at lead-model cost.
+  `CLAUDE.snippet.md` invariants updated: name a model on every teammate spec.
+- **⚠️ NEW PLATFORM BEHAVIOR — `autoContinueAtUsageLimit`, default `true`**
+  (v2.1.234+; settings-reference: *"After a claude.ai usage limit stops your
+  session, wait in the open session and continue the task automatically after
+  the reset"*). An over-limit session now resumes burning **unattended** at
+  window reset unless opted out. Added to the control table in
+  `session-topology-and-controls.md` and the serialize-near-the-wall paragraph
+  in `CLAUDE.snippet.md`.
+- **NEW OBSERVABILITY** — `/usage` **Loops** breakdown (v2.1.242+, costs.md:
+  per-loop run count, total + per-run tokens, keyed by prompt) — runaway `/loop`
+  tasks now directly visible; `/tasks` and agent detail dialogs now show each
+  subagent's **model and effort** (v2.1.243). Both added to prose docs.
+- **NEW SETTINGS KEYS** — `promptCacheTtl` / `subagentPromptCacheTtl`
+  (v2.1.242+, `"5m"`/`"1h"`, any scope; mainly for API-key/cloud-provider
+  setups — noted in `CLAUDE.snippet.md` cache-hygiene paragraph). `modelPicker`
+  (v2.1.243, curates the `/model` picker — distinct from the `availableModels`
+  enforcement gate; not placed). `modelPricing` (managed orgs; changelog-only so
+  far, not yet in settings-reference — N/A here).
+- **Cost-relevant fixes in range**: `←`/`/background` during a dynamic workflow
+  no longer silently **restarts finished subagents** (v2.1.246 — asks first,
+  says how many); output styles no longer drift back to the default voice
+  mid-session (v2.1.238 — `terse.md` now reliably sticks); a subagent stopped at
+  `maxTurns` returns output **marked partial** with a SendMessage hint
+  (v2.1.246); PreToolUse-deferred tools resume the original turn's OTel trace
+  (v2.1.239); data-residency workspaces bill a 1.1× premium into `/cost`,
+  statusline, and `--max-budget-usd` (v2.1.239, N/A here).
+- **Minor wording drift recorded** (no semantic change): the workflows
+  concurrency row (*"fewer when Claude Code has fewer CPUs available, including
+  inside a CPU-limited container"*), an added exit-2 sentence (SubagentStart
+  notice renders in the subagent's own transcript), and settings.md's `-p` tail
+  (*"run claude doctor to see what it dropped"*). New non-load-bearing
+  PreToolUse capability: `updatedInput` can rewrite tool arguments (the guards
+  only deny — unaffected).
+
+Files patched: `manifest/claims.json` (all 16 claims re-stamped `(b)`),
+`CLAUDE.snippet.md` (teammate rule, auto-continue caveat, cache-TTL keys,
+version stamp), `session-topology-and-controls.md` (2 new control rows).
+Offline suite + self-checks re-run green (see below). Lock bumped to 2.1.246.
+
+---
+
 ## 2026-08-26 — drift check v2.1.226 → v2.1.233
 
 Triggered by the version-check hook (`.drift` = 2.1.233). Verified against raw

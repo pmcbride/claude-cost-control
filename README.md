@@ -34,7 +34,12 @@ gate — except for **plugin** subagents, which ignore frontmatter `hooks:` and 
 covered only by the settings-level gate. The optional managed-settings
 `availableModels` allowlist is the independent hard backstop, enforced against
 subagent frontmatter, the Agent tool's model param, and
-`CLAUDE_CODE_SUBAGENT_MODEL` (docs/en/model-config).
+`CLAUDE_CODE_SUBAGENT_MODEL` (docs/en/model-config). Note that as of **v2.1.251**
+`CLAUDE_CODE_SUBAGENT_MODEL` is a *default*, not an override — an explicit
+per-spawn `model` and an agent's frontmatter `model:` both win over it — so a
+global `CLAUDE_CODE_SUBAGENT_MODEL=haiku` is now a safe roster-preserving floor.
+The old override behavior is opt-in via `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`
+(v2.1.257+), which discards the roster entirely.
 
 ## What you'll actually notice day-to-day (and the kill switch)
 
