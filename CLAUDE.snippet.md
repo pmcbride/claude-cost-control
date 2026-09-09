@@ -25,17 +25,30 @@ coherence tool, not a savings tool. Never reach for them to "save tokens."
 
 Invariants: a subagent's model must be **≤ the main-chat model**; **never spawn a
 subagent on `fable`**; set an explicit **`effort`** too (`low`/`medium` for
-mechanical work, `high` only for hard reasoning).
+mechanical work, `high` only for hard reasoning). This applies to **agent-team
+teammates** too: since v2.1.234 the "Default teammate model" `/config` setting is
+gone and an unspecified teammate runs on the **leader's** model — name a model on
+every teammate spec.
 
-**Never inherit the model implicitly.** `CLAUDE_CODE_SUBAGENT_MODEL` is a
-highest-precedence *override*, not a soft default (docs/en/model-config: it
-"overrides the per-invocation `model` parameter and the subagent definition's
-`model` frontmatter") — setting it globally steamrolls per-agent frontmatter. So
-express defaults through **frontmatter** (pin `model:` on every named
-`.claude/agents/*.md`; never `inherit`/`fable`) and set an explicit `model` on
-every ad-hoc Agent spawn and every workflow `agent(prompt, {model, effort})`
-stage. Use the env var only tactically, for a single session, to force ALL
-subagents cheap during a heavy run.
+**Never inherit the model implicitly.** ⚠️ **The precedence FLIPPED in v2.1.251.**
+`CLAUDE_CODE_SUBAGENT_MODEL` is now a *default*, not an override — sub-agents.md
+resolves (1) per-invocation `model`, (2) frontmatter `model:` (`inherit` selects
+the session model), (3) `CLAUDE_CODE_SUBAGENT_MODEL`, (4) the session model, and
+states outright: *"Before v2.1.251, `CLAUDE_CODE_SUBAGENT_MODEL` came first in
+this order and overrode both the per-invocation parameter and the frontmatter."*
+The old steamroll behavior moved to a separate switch, **`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`**
+(v2.1.257+), which ignores every definition's `model:` — including the built-in
+Explore and Plan agents — and stops Claude passing a model at all; set alone it
+forces every subagent onto the *main conversation's* model (a footgun on an
+Opus/Fable lead). Forks and `model: inherit` skills stay on the main model either
+way. Practical consequence: setting `CLAUDE_CODE_SUBAGENT_MODEL=haiku` globally
+is now **safe and useful** — it is the missing "default cheap, let frontmatter
+win" knob this bundle previously said did not exist. Still express the roster
+through **frontmatter** (pin `model:` on every named `.claude/agents/*.md`; never
+`inherit`/`fable`) and set an explicit `model` on every ad-hoc Agent spawn and
+every workflow `agent(prompt, {model, effort})` stage — those now win over the env
+var, so they remain the authoritative layer. Reserve `..._FORCE` for a single
+heavy session where you want everything cheap regardless of the roster.
 
 **Bound fan-out.** Workflow agents inherit the *session* model unless a stage
 overrides it — so keep heavy/workflow sessions on Opus (plan-included), not
@@ -55,7 +68,11 @@ running unattended.
 **Serialize when the 5-hour window is tight.** Parallelism doesn't reduce total
 tokens — it raises the burn *rate*, which is exactly what trips the rolling
 limit. Near the wall, run work sequentially to spread the same cost across
-windows. (The usage-budget hook enforces this automatically above ~80%.)
+windows. (The usage-budget hook enforces this automatically above ~80%.) Also
+know that since v2.1.234 a session stopped by the usage limit **auto-continues
+when the window resets** (`autoContinueAtUsageLimit`, default `true`) — an
+over-limit session with queued work resumes burning unattended at reset; set it
+`false` in user settings to opt out.
 
 **One thin brain per project.** Keep a long-lived orchestrator lean: it reads,
 plans, dispatches, and synthesizes — heavy/verbose work goes to subagents that
@@ -73,9 +90,23 @@ subagent when you just need more hands on the same context (a fork reuses the
 parent's cache, system prompt, tools, and model). Since v2.1.229, workflow
 fan-outs stagger same-prefix sibling agents so later siblings read the cached
 prompt prefix instead of re-paying it — workflow fan-outs are cheaper than
-equivalent hand-rolled parallel spawns.
+equivalent hand-rolled parallel spawns. (API-key / cloud-provider setups can pin
+the TTLs themselves since v2.1.242: `promptCacheTtl` / `subagentPromptCacheTtl`
+settings keys, `"5m"` or `"1h"`; on-plan subscribers keep the managed defaults.
+Since v2.1.248 a single agent can pin its own TTL via frontmatter
+`experimental: {cacheTtl: "5m"|"1h"}` — read only from subagent files, and `1h`
+is ignored while the subscription is on usage credits.) **You no longer have to
+guess:** v2.1.251 added a per-session `prompt_cache` object to statusline stdin
+and a `Prompt cache (main)` line to `/cost` — hit ratio, misses,
+`miss_recache_tokens`, `warm`, `ttl`, `expires_at`, and (v2.1.260+)
+`last_miss_cause` / `miss_causes` naming *why* the last miss happened. Check it
+before blaming cache hygiene for a spend spike. Related fixes now on this build:
+resuming a foreground subagent no longer rewrites its tool list (v2.1.265),
+teammates/resumed subagents no longer move SubagentStart context out of the prompt
+prefix (v2.1.265), and `/effort` on Fable 5.1 no longer invalidates the cache
+(v2.1.260).
 
-**How the spawn gate works (verified vs docs 2026-08-26 / v2.1.233; re-verify
+**How the spawn gate works (verified vs docs 2026-09-08 / v2.1.266; re-verify
 after each `claude update`).** A subagent spawn is a `PreToolUse` call on the
 **`Agent`** tool (renamed from `Task` in v2.1.63; `Task` still aliases) — that is
 the only hook surface that can block a spawn. `SubagentStart` fires on spawn but
@@ -94,6 +125,15 @@ the custom `Explore` agent pins `model: haiku` so the cheap explorer survives an
 change to the built-in's default; and since v2.1.218 **project-level** agent
 frontmatter hooks require workspace trust for the folder holding the agent file —
 user-level agents in `~/.claude/agents/` (where this bundle installs) are exempt.
+**New gating surface (v2.1.251):** `PreModelSwitch` can *block* a model switch
+(`hookSpecificOutput.permissionDecision` allow/deny/ask, or top-level
+`decision: "block"`; matcher runs against the canonical `to_model`) and
+`PostModelSwitch` observes one. That is the missing lever for "don't let this
+session drift onto Fable/Opus mid-run" — this bundle does not register it yet.
+Caveat from the docs: Claude Code skips `PreModelSwitch` for switches it makes
+itself (automatic model fallback, restoring a model on resume), and when it can't
+canonicalize the target it runs *every* hook regardless of matcher, so a blocking
+hook must check `to_model` from its stdin rather than trust the matcher.
 
 ## Verbosity tiering
 
