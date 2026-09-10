@@ -65,6 +65,26 @@ ceiling is `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`, default **20**, and it is
 there is **no total-per-session spawn cap** at all. Never leave subagent chains
 running unattended.
 
+**Cap effort, not just models (`maxEffortLevel`, new in v2.1.267).** Effort level
+is the other spend multiplier, and until now nothing could bound it. The
+`maxEffortLevel` settings key caps it *"on every provider, including Bedrock,
+Vertex and Foundry"*: `"low"`|`"medium"`|`"high"`|`"xhigh"`|`"max"` (`"max"` = no
+cap), default unset. Anything higher runs at the cap instead — `/effort`, the
+`/model` picker, `--effort`, `CLAUDE_CODE_EFFORT_LEVEL`, **and a skill's or
+subagent's `effort` frontmatter**. Two properties make it a real guardrail rather
+than a preference: it is `Any file` scope and **the lowest cap across scopes wins,
+so a lower scope cannot raise it**; and *"a cap below `xhigh` makes ultracode
+unavailable on the models the cap applies to"* — which is the only documented way
+to disarm ultracode, whose fan-out ignores `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`
+entirely. Per-model exemptions go in that model's `modelSettings` entry
+(`"maxEffortLevel": "max"`), and they replace the top-level key only *within the
+same settings source*. Not set by this bundle — decide it per machine.
+
+Note also that `effort:` frontmatter on subagents, skills, and custom commands was
+silently **ignored** on models with a pinned default effort (Opus 4.7, Opus 4.8,
+Fable 5) until v2.1.267 fixed it. Effort pins written before that build were
+no-ops on those models and are only now taking effect.
+
 **Serialize when the 5-hour window is tight.** Parallelism doesn't reduce total
 tokens — it raises the burn *rate*, which is exactly what trips the rolling
 limit. Near the wall, run work sequentially to spread the same cost across
@@ -82,10 +102,13 @@ accumulate.
 
 **Prompt-cache hygiene (a hidden multiplier).** The main conversation gets a
 1-hour cache TTL on-plan; each fresh subagent builds its OWN cache cold on a
-5-minute TTL, so large fan-out pays repeated cold-cache write premiums. Rules:
-don't switch models mid-session, don't edit CLAUDE.md mid-session, and don't
-mutate the tool set mid-task — each invalidates the cache from that point down
-and forces an expensive uncached rebuild. Prefer a **fork** over a fresh named
+5-minute TTL, so large fan-out pays repeated cold-cache write premiums. ⚠️ **Two
+of the three classic rules were retired by v2.1.267.** What still costs a full
+uncached rebuild is **editing CLAUDE.md mid-session**. Switching models with
+`/model` no longer re-sends every tool definition, and mid-session MCP/plugin
+tool additions no longer rewrite the tool block — on supported models they now
+arrive as *deferred* definitions. Treat model-switch and tool-set churn as cheap
+on ≥v2.1.267 and stale advice below it. Prefer a **fork** over a fresh named
 subagent when you just need more hands on the same context (a fork reuses the
 parent's cache, system prompt, tools, and model). Since v2.1.229, workflow
 fan-outs stagger same-prefix sibling agents so later siblings read the cached
@@ -104,9 +127,15 @@ before blaming cache hygiene for a spend spike. Related fixes now on this build:
 resuming a foreground subagent no longer rewrites its tool list (v2.1.265),
 teammates/resumed subagents no longer move SubagentStart context out of the prompt
 prefix (v2.1.265), and `/effort` on Fable 5.1 no longer invalidates the cache
-(v2.1.260).
+(v2.1.260). v2.1.267 closed most of the rest: `/model` switches, mid-session
+MCP/plugin tool additions, a forked background worker adding `EnterWorktree`, a
+disconnected-MCP or upgraded tool disappearing mid-conversation, resumed sessions
+re-rendering tool descriptions or rewriting MCP announcements, a `-p` conversation
+resumed interactively, and subagents/sessions started with `--system-prompt` /
+`--append-system-prompt` re-rendering their prompt and tool definitions — all now
+record once instead of breaking prefix reuse.
 
-**How the spawn gate works (verified vs docs 2026-09-08 / v2.1.266; re-verify
+**How the spawn gate works (verified vs docs 2026-09-10 / v2.1.267; re-verify
 after each `claude update`).** A subagent spawn is a `PreToolUse` call on the
 **`Agent`** tool (renamed from `Task` in v2.1.63; `Task` still aliases) — that is
 the only hook surface that can block a spawn. `SubagentStart` fires on spawn but

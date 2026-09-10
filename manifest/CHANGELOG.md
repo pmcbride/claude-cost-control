@@ -6,6 +6,109 @@ and which files were patched. Newest at top. Never edit past entries.
 
 ---
 
+## 2026-09-10 — drift check v2.1.266 → v2.1.267
+
+Triggered by the version-check hook (`.drift` = 2.1.267). Verified against raw
+primary-source markdown (curl of 15 `code.claude.com/docs/en/*.md` pages + the
+changelog + local grep). Live docs track **v2.1.267** — binary and docs aligned,
+no POST-LOCK bracketing needed. No subagents used.
+
+**All 16 existing claims re-matched verbatim. No verdict changed. No executable
+guardrail was touched this pass.** The one `CHANGED` claim
+(`subagent-model-precedence`) was re-confirmed still in its v2.1.251 state —
+`model-config.md:780` still reads *"A per-invocation model or a definition's
+`model` field, including `inherit`, takes precedence"* — so the guard rewrite
+applied on 2026-09-08 remains correct on this build.
+
+### ➕ NEW CLAIM — `max-effort-level` (v2.1.267)
+
+The one addition, and it is the first bound this bundle has ever had on the
+*other* spend multiplier. `settings-reference.md#maxeffortlevel`, verbatim:
+
+> Cap the effort level a session can use, leaving lower levels available. Any
+> higher level runs at the cap instead, including one from `/effort`, the
+> `/model` picker, `--effort`, `CLAUDE_CODE_EFFORT_LEVEL`, a skill's or
+> subagent's `effort` frontmatter, or the model's own default.
+
+Two properties make it a guardrail rather than a preference:
+
+| Property | Verbatim |
+|---|---|
+| Enforceable downward | *"Scope: `Any file`. Deploy it in managed settings to enforce it for an organization. When several scopes set a cap, the lowest applies, so a cap set in one scope can't be raised from another"* |
+| Disarms ultracode | *"a cap below `xhigh` makes ultracode unavailable on the models the cap applies to"* |
+
+That second line matters here specifically: **ultracode is the one mode exempt
+from `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`** and from the large-workflow
+warning, and until now nothing in this bundle could reach it. Type is
+`low`|`medium`|`high`|`xhigh`|`max` (`"max"` = no cap), default unset; per-model
+exemptions go in that model's `modelSettings` entry and apply *"only within the
+settings source that sets both"*.
+
+Documented in `session-topology-and-controls.md` (three rows),
+`CLAUDE.snippet.md`, and ADR §7 row 15. **Not wired into
+`settings.snippet.json`** — see HITL below.
+
+### ⚠️ Two thirds of this bundle's prompt-cache advice was retired by v2.1.267
+
+The long-standing rule was *"don't switch models mid-session, don't edit
+CLAUDE.md mid-session, don't mutate the tool set mid-task."* Two of those three
+are now obsolete, per the v2.1.267 changelog:
+
+- *"Fixed switching models with `/model` re-sending every tool definition (a
+  prompt-cache miss); commit and PR attribution text now arrives as a
+  conversation note that updates on model changes"*
+- *"Fixed mid-session MCP and plugin tools being added to the tool list in
+  sessions without ToolSearch, which broke prompt-cache reuse; supported models
+  now receive them as deferred definitions"*
+- *"Improved prompt-cache stability: subagents and sessions started with
+  `--system-prompt` or `--append-system-prompt` now record the system prompt and
+  tool definitions once instead of re-rendering them"*
+
+Plus fixes for a forked background worker adding `EnterWorktree` mid-session, a
+tool disappearing from a disconnected MCP server, resumed sessions re-rendering
+tool descriptions or rewriting MCP announcements, and a `-p` conversation resumed
+interactively. **Only mid-session CLAUDE.md edits still force a full uncached
+rebuild.** Corrected in `CLAUDE.snippet.md`, ADR §0a and ADR §7 row 13.
+
+### 🐞 `effort:` frontmatter was a silent no-op on three models until this build
+
+v2.1.267: *"Fixed `effort:` frontmatter on custom commands, skills, and
+subagents being ignored on models whose default effort is still pinned (Opus
+4.7, Opus 4.8, Fable 5)."* Any effort pin written before v2.1.267 did nothing on
+those models. This bundle's `agents/*.md` carry no `effort:` at all, so nothing
+regressed — but the guidance in `CLAUDE.snippet.md` to "set an explicit `effort`"
+was unenforceable on those models until now. Noted in the claim and the snippet.
+
+### Other in-range deltas (no patch needed)
+
+| Delta | Why it doesn't move anything here |
+|---|---|
+| Managed `allowedHttpHookUrls`, `httpHookAllowedEnvVars`, `allowedChannelPlugins` *"admit nothing, not everything, when unreadable"* | Fail-closed, same direction as this bundle's design; none of the three are used |
+| *"Fixed the usage-limit warning flickering on and off during a session when requests for different models or modes report different limit windows"* | Claude Code's own warning UI, not the statusline payload the sensor reads |
+| *"Fixed Workflow `agent()` calls with large output schemas being refused in auto mode"* | Removes a spurious refusal; no cost effect |
+| `--system-prompt-snapshot off` | New CLI flag for prompt iteration; re-renders the prompt every request, so it *costs* cache — recorded, not recommended |
+
+### 🔴 HITL — proposed, NOT applied
+
+1. **`maxEffortLevel` in `settings.snippet.json`.** Setting a cap changes how
+   every session in this account thinks. It is a user policy decision, not a
+   doc fact — proposed, not written.
+2. **`effort:` in `agents/*.md`.** Now that v2.1.267 makes it actually take
+   effect, `explore.md` (`low`), `worker.md` (`medium`) and `reviewer.md`
+   (`high`) would match the roster's intent. Frontmatter = HITL by policy.
+3. **Sync `~/.claude/CLAUDE.md`** with the corrected prompt-cache paragraph and
+   the new `maxEffortLevel` guidance. That file is the user's own instructions;
+   not touched without a say-so.
+
+### Files patched (safe/auto)
+
+`manifest/claims.json` (16 claims re-stamped + `max-effort-level` added),
+`manifest/CHANGELOG.md`, `CLAUDE.snippet.md`, `ADR-claude-code-cost-control.md`,
+`session-topology-and-controls.md`, `manifest/version.lock` → 2.1.267,
+`manifest/.drift` removed.
+
+---
+
 ## 2026-09-08 — drift check v2.1.246 → v2.1.266
 
 Triggered by the version-check hook (`.drift` = 2.1.266). Verified against raw
