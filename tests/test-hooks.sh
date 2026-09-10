@@ -251,6 +251,59 @@ printf '{"hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"model
 [[ $? -eq 0 ]] \
   && ok "guard fails open on a null-pct state file (absent window != 0%)" || bad "null-pct fail-open" "$?"
 
+# --- TEMP-FILE HYGIENE (bug found + fixed 2026-09-10) -----------------------
+# The state write is write-to-temp + atomic rename. When Claude Code kills a
+# slow statusline between those steps the temp is stranded; nothing reaped it,
+# and 449 `.usage-state.json.XXXX` orphans accumulated in ~/.claude/ over ~8
+# weeks. Three layers now bound that: temps live in a cache dir under the state
+# file's directory (same filesystem, so `mv` stays atomic), a trap reaps them on
+# catchable signals, and an hourly sweep covers SIGKILL, which no trap can catch.
+STATE_DIR="$(dirname "$CC_USAGE_STATE")"
+TMP_CACHE="$STATE_DIR/cache/cost-control"
+orphans() { find "$1" -maxdepth 1 -type f -name 'state.json.????' 2>/dev/null | wc -l | tr -d ' '; }
+
+printf '%s' "$SL_IN" | CC_STATUSLINE_NOCOLOR=1 bash "$STATUSLINE" >/dev/null 2>&1
+[[ -d "$TMP_CACHE" && "$(orphans "$STATE_DIR")" == "0" && "$(orphans "$TMP_CACHE")" == "0" ]]   && ok "temps go to a cache dir and a clean run leaves ZERO of them behind"   || bad "temp hygiene" "state_dir=$(orphans "$STATE_DIR") cache=$(orphans "$TMP_CACHE") dir=$([[ -d $TMP_CACHE ]] && echo yes || echo no)"
+
+# aged orphans in BOTH locations are swept; fresh ones (a concurrent statusline
+# in another session may be mid-write) and the state file itself must survive.
+touch -t 202601010000 "$STATE_DIR/state.json.AB12" "$TMP_CACHE/state.json.CD34"
+touch "$STATE_DIR/state.json.EF56" "$TMP_CACHE/state.json.GH78"
+rm -f "$TMP_CACHE"/.sweep-after-*       # force the hourly sweep to run now
+printf '%s' "$SL_IN" | CC_STATUSLINE_NOCOLOR=1 bash "$STATUSLINE" >/dev/null 2>&1
+[[ ! -e "$STATE_DIR/state.json.AB12" && ! -e "$TMP_CACHE/state.json.CD34"    && -e "$STATE_DIR/state.json.EF56" && -e "$TMP_CACHE/state.json.GH78" && -s "$CC_USAGE_STATE" ]]   && ok "sweep reaps aged orphans (legacy + cache), spares fresh ones and the state file"   || bad "orphan sweep" "$(find "$STATE_DIR" "$TMP_CACHE" -maxdepth 1 -name 'state.json*' | tr '\n' ' ')"
+rm -f "$STATE_DIR/state.json.EF56" "$TMP_CACHE/state.json.GH78"
+
+# the sweep is gated on a stamp file: it must NOT re-run on the next render
+# (this is what keeps a 5-second refresh cadence from walking a directory).
+touch -t 202601010000 "$TMP_CACHE/state.json.IJ90"
+printf '%s' "$SL_IN" | CC_STATUSLINE_NOCOLOR=1 bash "$STATUSLINE" >/dev/null 2>&1
+[[ -e "$TMP_CACHE/state.json.IJ90" ]]   && ok "sweep is rate-limited by its stamp file (no directory walk every refresh)"   || bad "sweep stamp gating" "aged orphan was swept twice in a row"
+rm -f "$TMP_CACHE/state.json.IJ90"
+
+# a KILLED statusline must not strand a temp: trap on HUP/INT/TERM. (SIGKILL is
+# uncatchable by design — the sweep above is that case's backstop.)
+# A `jq` shim that hangs parks the script INSIDE the temp->rename window. `$!`
+# after a pipeline is the LAST element's pid — the statusline's own shell, the
+# one that owns the trap — so the signal reaches the trap, not a wrapper.
+mkdir -p "$TMP/shim"
+{ printf '#!/usr/bin/env bash\n'
+  printf '[[ " $* " == *" -n "* ]] && { sleep 30; exit 0; }\n'   # only the STATE write hangs
+  printf 'exec %s "$@"\n' "$(command -v jq)"                     # the stdin PARSE must still work
+} > "$TMP/shim/jq"; chmod +x "$TMP/shim/jq"
+printf '%s' "$SL_IN" | PATH="$TMP/shim:$PATH" CC_STATUSLINE_NOCOLOR=1 bash "$STATUSLINE" >/dev/null 2>&1 &
+SL_PID=$!
+SPUN=0
+while [[ "$(orphans "$TMP_CACHE")" == "0" && $SPUN -lt 500 ]]; do SPUN=$((SPUN+1)); done
+SAW_TMP="$(orphans "$TMP_CACHE")"      # assert the window was actually entered
+kill -TERM $SL_PID 2>/dev/null; wait $SL_PID 2>/dev/null
+LEFT_CACHE="$(orphans "$TMP_CACHE")"; LEFT_STATE="$(orphans "$STATE_DIR")"
+[[ "$SAW_TMP" != "0" && "$LEFT_CACHE" == "0" && "$LEFT_STATE" == "0" ]] \
+  && ok "SIGTERM mid-write reaps its temp (trap), leaving nothing behind" \
+  || bad "signal trap" "saw=$SAW_TMP left_cache=$LEFT_CACHE left_state=$LEFT_STATE"
+rm -rf "$TMP/shim"
+state 95   # restore fresh state for the suites below
+
 rm -f "$CC_USAGE_STATE"
 OUT="$(printf '%s' "$SL_IN" | CC_STATUSLINE_STATE_ONLY=1 bash "$STATUSLINE")"; CODE=$?
 [[ $CODE -eq 0 && -z "$OUT" ]] && jq -e '.five_hour_pct == 24' "$CC_USAGE_STATE" >/dev/null 2>&1 \

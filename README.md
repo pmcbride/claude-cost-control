@@ -211,6 +211,10 @@ than the one below it, so the thresholds must stay ordered:
 - Watchdog: `CC_WATCHDOG_STOP_PCT` (94), `CC_WATCHDOG_INTERVAL` (30s),
   `CC_WATCHDOG_MAX_STOP` (1), `CC_WATCHDOG_DRYRUN`, `CC_WATCHDOG_INCLUDE_BLOCKED`.
 - Shared: `CC_USAGE_STATE` (state file path), `CC_*_LOG` (log paths).
+- Statusline temp files: `CC_USAGE_TMP_DIR` (default `<state dir>/cache/cost-control`
+  — keep it on the state file's filesystem or the atomic rename degrades to a
+  copy), `CC_USAGE_TMP_TTL_MIN` (60 — an orphaned temp is reaped once it is this
+  old), `CC_USAGE_SWEEP_EVERY_MIN` (60 — how often the sweep may run).
 
 Per-project overrides: put a project `.claude/settings.json` with different
 thresholds, or set the env vars in that project's shell.
