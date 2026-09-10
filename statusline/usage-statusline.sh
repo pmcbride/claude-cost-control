@@ -68,10 +68,15 @@ if [[ -n "$five_i" ]]; then
   elif (( five_i >= WARN_PCT )); then five_color="$YEL"; fi
 fi
 
+# One clock read for the whole script — reused by the reset hint, the state
+# file's updated_at, and the sweep schedule. $EPOCHSECONDS is a bash-5 builtin
+# (no fork); bash 3.2, still the macOS system bash, falls back to `date`.
+NOW="${EPOCHSECONDS:-$(date +%s)}"
+
 # minutes until 5h window resets (epoch seconds -> relative)
 reset_hint=""
 if [[ -n "$five_reset" && "$five_reset" =~ ^[0-9]+$ ]]; then
-  now="$(date +%s)"; mins=$(( (five_reset - now) / 60 ))
+  mins=$(( (five_reset - NOW) / 60 ))
   (( mins < 0 )) && mins=0
   if (( mins >= 60 )); then reset_hint="${DIM}(~$((mins/60))h$((mins%60))m)${RST}"; else reset_hint="${DIM}(~${mins}m)${RST}"; fi
 fi
@@ -123,19 +128,82 @@ fi  # end of render (skipped in state-only mode)
 # file, losing context_pct and model too. That turned routine now that v2.1.266
 # documents "Claude Code drops a window once its resets_at time passes", so an
 # absent five_hour is expected, not just a non-subscriber case.
+#
+# TEMP FILES LIVE IN A CACHE DIR, NOT NEXT TO THE STATE FILE (fixed 2026-09-10).
+# The write is a write-to-temp + atomic rename. If the statusline process is
+# killed between those two steps the temp is stranded, and nothing ever reaped
+# it — 449 `.usage-state.json.XXXX` orphans had piled up in ~/.claude/ over ~8
+# weeks. Claude Code re-runs this every `statusLine.refreshInterval` seconds and
+# kills a slow one, and under statusline-wrap.sh's STATE_ONLY pass this block is
+# essentially the whole script, so the kill lands inside that window often.
+#
+# Three layers, cheapest first:
+#   1. temps go to $CC_USAGE_TMP_DIR — a cache dir UNDER the state file's own
+#      directory, so it is the same filesystem and `mv` stays an atomic rename,
+#      and so any future orphan pollutes a scratch dir instead of ~/.claude/;
+#   2. a trap reaps the temp on normal exit and on catchable signals;
+#   3. an hourly sweep prunes temps older than $CC_USAGE_TMP_TTL_MIN — the only
+#      layer that covers SIGKILL, which no trap can catch. It also sweeps LEGACY
+#      orphans beside the state file, so an existing pile drains itself.
+# All of it is best-effort: any failure falls back to the previous behavior
+# rather than costing a state write, because a missing state file disarms the
+# guards (see "Fail-open" in CLAUDE.md).
+STATE_DIR="${STATE_FILE%/*}"; [[ "$STATE_DIR" == "$STATE_FILE" ]] && STATE_DIR="."
+STATE_BASE="${STATE_FILE##*/}"
+TMP_DIR="${CC_USAGE_TMP_DIR:-$STATE_DIR/cache/cost-control}"
+TMP_TTL_MIN="${CC_USAGE_TMP_TTL_MIN:-60}"      # reap orphaned temps older than this
+SWEEP_EVERY_MIN="${CC_USAGE_SWEEP_EVERY_MIN:-60}"  # how often the sweep may run
+
+cc_tmp=""
+cc_reap_tmp() { [[ -n "$cc_tmp" ]] && rm -f "$cc_tmp" 2>/dev/null; return 0; }
+trap cc_reap_tmp EXIT HUP INT TERM
+
 {
-  mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null || true
-  tmp="$(mktemp "${STATE_FILE}.XXXX" 2>/dev/null)" || tmp=""
+  mkdir -p "$STATE_DIR" 2>/dev/null || true
+  mkdir -p "$TMP_DIR" 2>/dev/null || TMP_DIR="$STATE_DIR"
+  tmp="$(mktemp "${TMP_DIR}/${STATE_BASE}.XXXX" 2>/dev/null)" || tmp=""
+  cc_tmp="$tmp"
   if [[ -n "$tmp" ]]; then
     jq -n \
       --arg fp "${five_i:-}" --arg fr "${five_reset:-}" \
       --arg sp "${seven_i:-}" --arg ctx "${ctx_i:-}" \
-      --arg model "${model:-}" --arg updated "$(date +%s)" \
+      --arg model "${model:-}" --arg updated "$NOW" \
       '{five_hour_pct: (($fp|select(.!="")|tonumber?) // null),
         five_hour_resets_at: (($fr|select(.!="")|tonumber?) // null),
         seven_day_pct: (($sp|select(.!="")|tonumber?) // null),
         context_pct: (($ctx|select(.!="")|tonumber?) // null),
         model: $model, updated_at: ($updated|tonumber)}' \
       > "$tmp" 2>/dev/null && mv -f "$tmp" "$STATE_FILE" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    cc_tmp=""   # renamed or removed either way; nothing left for the trap to reap
+  fi
+} || true
+
+# ---- hourly sweep of orphaned temps (the SIGKILL backstop) ----
+# The schedule lives in the STAMP FILE'S NAME (.sweep-after-<epoch>), not its
+# mtime, so the common path is a bash glob and integer compare — ZERO forks.
+# Checking an mtime instead would mean a `find`/`stat` fork on every render, and
+# this runs every `statusLine.refreshInterval` seconds in every open session.
+# `-mmin +N` spares a temp a CONCURRENT statusline (another session, same $HOME)
+# is writing right now.
+{
+  due=0
+  stamps=("$TMP_DIR"/.sweep-after-*)
+  if [[ ! -e "${stamps[0]:-}" ]]; then   # :- guards set -u if nullglob is ever on
+    due=1                                   # never swept here
+  else
+    for st in "${stamps[@]}"; do
+      at="${st##*/.sweep-after-}"
+      [[ "$at" =~ ^[0-9]+$ ]] && (( NOW >= at )) && due=1
+      [[ "$at" =~ ^[0-9]+$ ]] || rm -f "$st" 2>/dev/null   # garbage name: reset
+    done
+  fi
+  if (( due )); then
+    rm -f "$TMP_DIR"/.sweep-after-* 2>/dev/null
+    : > "$TMP_DIR/.sweep-after-$(( NOW + SWEEP_EVERY_MIN * 60 ))" 2>/dev/null || true
+    find "$TMP_DIR" -maxdepth 1 -type f -name "${STATE_BASE}.????" -mmin +"$TMP_TTL_MIN" -delete 2>/dev/null || true
+    # legacy location: temps this script wrote beside the state file before the
+    # cache dir existed. The 4-char glob cannot match "$STATE_FILE" itself.
+    [[ "$TMP_DIR" != "$STATE_DIR" ]] &&
+      find "$STATE_DIR" -maxdepth 1 -type f -name "${STATE_BASE}.????" -mmin +"$TMP_TTL_MIN" -delete 2>/dev/null || true
   fi
 } || true
