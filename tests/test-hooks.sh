@@ -368,5 +368,130 @@ jq -e '.five_hour_pct == 24' "$CC_USAGE_STATE" >/dev/null 2>&1 \
 rm -f "$WRAP_FLAG"
 
 echo
+echo "== version-check: background verify dispatch (added 2026-09-16) =="
+VC="$ROOT/hooks/version-check.sh"
+VR="$TMP/vc"; mkdir -p "$VR/manifest"
+STUB="$TMP/claude-stub"; STUB_REC="$TMP/claude-stub.rec"
+cat > "$STUB" <<'STUBEOF'
+#!/usr/bin/env bash
+printf '%s\n' "ARGS:$*" "CHILD:${CC_VERIFY_CHILD:-}" "CWD:$PWD" >> "$STUB_REC"
+[[ "${STUB_FAIL:-0}" == "1" ]] && { echo "boom" >&2; exit 3; }
+echo "Started background session 0123abcd-4567-89ab-cdef-0123456789ab"
+STUBEOF
+chmod +x "$STUB"
+export STUB_REC
+vc() { # run version-check with an isolated root; sets OUT CODE
+  OUT="$(env -u CC_VERIFY_CHILD CC_ROOT="$VR" CC_DISABLE_FLAG="$VR/.disabled" CC_CLAUDE_BIN="$STUB" \
+         CC_VERIFY_DISPATCH_LOG="$VR/dispatch.log" CC_CLI_VERSION="${VC_VER:-2.0.2}" "$@" bash "$VC")"; CODE=$?
+}
+wait_marker_status() { # wait up to ~3s for the async launcher to patch the marker
+  local i; for i in $(seq 1 30); do
+    jq -e '.status != "dispatched"' "$VR/manifest/.verify-dispatched" >/dev/null 2>&1 && return 0; sleep 0.1
+  done; return 1
+}
+stub_calls() { grep -c '^ARGS:' "$STUB_REC" 2>/dev/null || echo 0; }
+vreset() { rm -rf "$VR/manifest" "$STUB_REC" "$VR/.disabled"; mkdir -p "$VR/manifest"; printf '{"pinned_version":"2.0.1","status":"verified"}\n' > "$VR/manifest/version.lock"; }
+
+vreset
+vc
+wait_marker_status
+[[ -z "$OUT" && $CODE -eq 0 ]] && ok "drift (background): emits nothing into the chat" || bad "bg drift stdout" "$OUT/$CODE"
+[[ "$(cat "$VR/manifest/.drift" 2>/dev/null)" == "2.0.2" ]] && ok "drift (background): .drift still written" || bad "bg drift flag" ""
+[[ "$(stub_calls)" == "1" ]] && grep -q '^ARGS:--bg .*cost-control-verify' "$STUB_REC" \
+  && ok "drift (background): claude --bg invoked once with the verify prompt" || bad "bg stub call" "$(cat "$STUB_REC" 2>/dev/null)"
+grep -q '^CHILD:1$' "$STUB_REC" && grep -q "^CWD:$VR\$" "$STUB_REC" \
+  && ok "drift (background): child gets CC_VERIFY_CHILD=1 and cwd \$CC_ROOT" || bad "bg child env" "$(cat "$STUB_REC" 2>/dev/null)"
+jq -e '.version=="2.0.2" and .status=="started" and .session_id=="0123abcd-4567-89ab-cdef-0123456789ab" and (.dispatched_epoch|type=="number")' \
+  "$VR/manifest/.verify-dispatched" >/dev/null 2>&1 \
+  && ok "drift (background): marker records version, status, session id" || bad "bg marker" "$(cat "$VR/manifest/.verify-dispatched" 2>/dev/null)"
+
+vc; sleep 0.3
+[[ -z "$OUT" && "$(stub_calls)" == "1" ]] && ok "drift again, same version, inside window: no re-dispatch" || bad "bg dedupe" "calls=$(stub_calls)"
+
+jq -c '.dispatched_epoch -= 13*3600' "$VR/manifest/.verify-dispatched" > "$VR/m.tmp" && mv "$VR/m.tmp" "$VR/manifest/.verify-dispatched"
+vc; wait_marker_status
+[[ -z "$OUT" && "$(stub_calls)" == "2" ]] && ok "after CC_VERIFY_REDISPATCH_HOURS (12h): dispatches again" || bad "bg redispatch" "calls=$(stub_calls)"
+
+vreset
+OUT="$(CC_VERIFY_CHILD=1 CC_ROOT="$VR" CC_DISABLE_FLAG="$VR/.disabled" CC_CLAUDE_BIN="$STUB" CC_VERIFY_DISPATCH_LOG="$VR/dispatch.log" CC_CLI_VERSION=2.0.2 bash "$VC")"; CODE=$?
+sleep 0.3
+[[ -z "$OUT" && $CODE -eq 0 && "$(stub_calls)" == "0" && ! -f "$VR/manifest/.verify-dispatched" && -f "$VR/manifest/.drift" ]] \
+  && ok "CC_VERIFY_CHILD=1: no dispatch (recursion guard), .drift still written" || bad "bg child guard" "$OUT calls=$(stub_calls)"
+
+vreset; : > "$VR/.disabled"
+vc; sleep 0.3
+[[ -z "$OUT" && $CODE -eq 0 && "$(stub_calls)" == "0" && ! -f "$VR/manifest/.drift" ]] \
+  && ok "kill switch: no dispatch, no output, no .drift" || bad "bg kill switch" "$OUT calls=$(stub_calls)"
+
+vreset
+vc CC_VERIFY_MODE=inline; sleep 0.3
+printf '%s' "$OUT" | jq -e '.hookSpecificOutput.additionalContext | startswith("COST-CONTROL VERSION DRIFT: Claude Code updated from v2.0.1 (last verified) to v2.0.2.")' >/dev/null 2>&1 \
+  && [[ "$(stub_calls)" == "0" ]] && ok "CC_VERIFY_MODE=inline: old additionalContext drift text, no dispatch" || bad "inline drift" "$OUT"
+rm -f "$VR/manifest/version.lock"
+vc CC_VERIFY_MODE=inline
+printf '%s' "$OUT" | jq -e '.hookSpecificOutput.additionalContext | startswith("COST-CONTROL SETUP:")' >/dev/null 2>&1 \
+  && ok "CC_VERIFY_MODE=inline: first run emits old SETUP text" || bad "inline setup" "$OUT"
+
+vreset
+vc CC_VERIFY_MODE=off; sleep 0.3
+[[ -z "$OUT" && $CODE -eq 0 && "$(stub_calls)" == "0" && -f "$VR/manifest/.drift" && ! -f "$VR/manifest/.verify-dispatched" ]] \
+  && ok "CC_VERIFY_MODE=off: only .drift written" || bad "off mode" "$OUT calls=$(stub_calls)"
+
+vreset; rm -f "$VR/manifest/version.lock"
+vc; wait_marker_status
+[[ -z "$OUT" && "$(stub_calls)" == "1" ]] && grep -q 'establish the first baseline' "$STUB_REC" \
+  && jq -e '.status=="baseline-pending"' "$VR/manifest/version.lock" >/dev/null 2>&1 \
+  && ok "first run (background): silent, lock baseline-pending, setup dispatch" || bad "bg first run" "$OUT calls=$(stub_calls)"
+
+vreset
+vc STUB_FAIL=1; wait_marker_status
+[[ -z "$OUT" && $CODE -eq 0 && -f "$VR/manifest/.drift" ]] && jq -e '.status=="failed"' "$VR/manifest/.verify-dispatched" >/dev/null 2>&1 \
+  && ok "failing claude --bg: exit 0, silent, marker status failed" || bad "bg stub fail" "$OUT/$CODE $(cat "$VR/manifest/.verify-dispatched" 2>/dev/null)"
+vreset
+vc CC_CLAUDE_BIN="$TMP/no-such-claude"
+[[ -z "$OUT" && $CODE -eq 0 && -f "$VR/manifest/.drift" && ! -f "$VR/manifest/.verify-dispatched" ]] \
+  && ok "claude missing: exit 0, silent, .drift written, no marker" || bad "bg missing claude" "$OUT/$CODE"
+
+vreset; echo 2.0.2 > "$VR/manifest/.drift"; echo '{"version":"2.0.2"}' > "$VR/manifest/.verify-dispatched"
+VC_VER=2.0.1 vc
+[[ -z "$OUT" && ! -f "$VR/manifest/.drift" && ! -f "$VR/manifest/.verify-dispatched" ]] \
+  && ok "in sync: .drift and dispatch marker removed" || bad "in sync cleanup" "$OUT"
+
+echo
+echo "== statusline stale-verify tag (added 2026-09-16) =="
+ST_IN='{"model":{"display_name":"Opus"}}'
+sl()   { printf '%s' "$ST_IN" | CC_ROOT="$VR" CC_DISABLE_FLAG="$VR/.disabled" CC_STATUSLINE_NOCOLOR=1 "$@"; }
+vreset
+BASE_SL="$(sl bash "$STATUSLINE")"; BASE_WR="$(sl bash "$ROOT/statusline/statusline-wrap.sh" "printf 'MY-LINE\n'")"
+[[ "$BASE_SL" != *cc-stale* && "$BASE_SL" != *cc-verifying* ]] && ok "no .drift: bundle statusline has no stale tag" || bad "sl no drift" "$BASE_SL"
+WR_RAW="$(printf '%s' "$ST_IN" | CC_ROOT="$VR" CC_DISABLE_FLAG="$VR/.disabled" bash "$ROOT/statusline/statusline-wrap.sh" "printf 'MY-LINE\n'" | od -c)"
+[[ "$WR_RAW" == "$(printf 'MY-LINE\n' | od -c)" ]] && ok "no .drift: wrap output byte-identical (trailing newline kept)" || bad "wrap byte-identical" "$WR_RAW"
+echo 2.0.2 > "$VR/manifest/.drift"
+OUT="$(sl bash "$STATUSLINE")"
+[[ "$OUT" == "$BASE_SL · [cc-stale v2.0.2]" ]] && ok "drift: bundle statusline appends [cc-stale v2.0.2]" || bad "sl stale" "$OUT"
+OUT="$(sl bash "$ROOT/statusline/statusline-wrap.sh" "printf 'MY-LINE'")"
+[[ "$OUT" == "MY-LINE [cc-stale v2.0.2]" ]] && ok "drift: wrapped statusline appends [cc-stale v2.0.2]" || bad "wrap stale" "$OUT"
+echo '{"version":"2.0.2","status":"started"}' > "$VR/manifest/.verify-dispatched"
+OUT="$(sl bash "$STATUSLINE")"
+[[ "$OUT" == "$BASE_SL · [cc-verifying v2.0.2]" ]] && ok "dispatch marker: bundle statusline shows [cc-verifying v2.0.2]" || bad "sl verifying" "$OUT"
+OUT="$(sl bash "$ROOT/statusline/statusline-wrap.sh" "printf 'MY-LINE'")"
+[[ "$OUT" == "MY-LINE [cc-verifying v2.0.2]" ]] && ok "dispatch marker: wrapped statusline shows [cc-verifying v2.0.2]" || bad "wrap verifying" "$OUT"
+echo '{"version":"2.0.2","status":"failed"}' > "$VR/manifest/.verify-dispatched"
+OUT="$(sl bash "$STATUSLINE")"
+[[ "$OUT" == *"[cc-stale v2.0.2]" ]] && ok "failed dispatch: falls back to [cc-stale]" || bad "sl failed" "$OUT"
+echo '{"version":"2.0.2","status":"hitl-pending"}' > "$VR/manifest/.verify-dispatched"
+OUT="$(sl bash "$STATUSLINE")"; OUT2="$(sl bash "$ROOT/statusline/statusline-wrap.sh" "printf 'MY-LINE'")"
+[[ "$OUT" == *"[cc-stale v2.0.2]" && "$OUT2" == "MY-LINE [cc-stale v2.0.2]" ]] && ok "hitl-pending verify: both renders show [cc-stale]" || bad "sl hitl" "$OUT / $OUT2"
+echo '{"version":"2.0.1","status":"started"}' > "$VR/manifest/.verify-dispatched"
+OUT="$(sl bash "$STATUSLINE")"
+[[ "$OUT" == *"[cc-stale v2.0.2]" ]] && ok "marker for an older version: [cc-stale]" || bad "sl old marker" "$OUT"
+: > "$VR/.disabled"
+OUT="$(sl bash "$ROOT/statusline/statusline-wrap.sh" "printf 'MY-LINE'")"
+[[ "$OUT" == "MY-LINE [cc-off] [cc-stale v2.0.2]" ]] && ok "wrap: [cc-off] and stale tag compose" || bad "wrap both" "$OUT"
+rm -f "$VR/.disabled"
+OUT="$(CC_STATUSLINE_STALE_TAG=0 sl bash "$STATUSLINE")"; OUT2="$(CC_STATUSLINE_STALE_TAG=0 sl bash "$ROOT/statusline/statusline-wrap.sh" "printf 'MY-LINE\n'")"
+[[ "$OUT" == "$BASE_SL" && "$OUT2" == "$BASE_WR" ]] && ok "CC_STATUSLINE_STALE_TAG=0: both renders unchanged" || bad "stale tag off" "$OUT / $OUT2"
+
+echo
 echo "PASS=$PASS FAIL=$FAIL"
 [[ $FAIL -eq 0 ]] || exit 1

@@ -496,6 +496,29 @@
           "what": "guard registered on PreToolUse matcher \"Workflow\""
         }
       ]
+    },
+    {
+      "id": "background-session-cli",
+      "summary": "`claude --bg \"<prompt>\"` starts a background agent session and returns immediately, printing the session id; version-check.sh uses it to run cost-control-verify off the foreground chat.",
+      "verdict": "CONFIRMED",
+      "confidence": "high",
+      "current_value": "NEW CLAIM added 2026-09-16 (v2.1.273). cli-reference.md, VERBATIM: '--bg, --background | Start the session as a background agent and return immediately. Prints the session ID and management commands.' Local `claude --help` on 2.1.273 agrees ('Start the session in the background and return immediately. Prints the id that `claude attach`, `logs`, `stop` and `rm` take; `claude agents` lists them.'). The printed id's exact format is NOT documented: the launcher parses a UUID, else the token after `attach`, and stores null when neither matches.",
+      "since_version": "2.1.273",
+      "doc_urls": [
+        "https://code.claude.com/docs/en/cli-reference.md"
+      ],
+      "verify": "grep -n -- '--bg' on cli-reference.md; confirm it still returns immediately (non-blocking) and prints an id",
+      "breaks_if_changed": "If --bg is removed or starts blocking, the SessionStart hook's detached launcher either fails (silent: .drift + [cc-stale] tag only, no verify runs) or lingers in the background; if the printed id format changes, .verify-dispatched.session_id becomes null (cosmetic).",
+      "affects": [
+        {
+          "file": "hooks/version-check.sh",
+          "what": "dispatch_verify(): background verify launcher (CC_VERIFY_MODE=background default)"
+        },
+        {
+          "file": "statusline/usage-statusline.sh",
+          "what": "[cc-verifying vX] tag keyed off the dispatch marker"
+        }
+      ]
     }
   ]
 }

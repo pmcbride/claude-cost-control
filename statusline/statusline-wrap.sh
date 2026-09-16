@@ -38,13 +38,18 @@ fi
 
 # Flag resolution mirrors usage-statusline.sh / the guards exactly.
 DISABLE_FLAG="${CC_DISABLE_FLAG:-${CC_ROOT:-$HOME/.claude/cost-control}/.disabled}"
+# Stale-verify marker (added 2026-09-16): manifest/.drift => append
+# [cc-verifying vX] / [cc-stale vX], same rule as usage-statusline.sh.
+DRIFT_FLAG=""
+[[ "${CC_STATUSLINE_STALE_TAG:-1}" != "0" ]] &&
+  DRIFT_FLAG="${CC_DRIFT_FLAG:-${CC_ROOT:-$HOME/.claude/cost-control}/manifest/.drift}"
 
-if [[ ! -f "$DISABLE_FLAG" ]]; then
-  printf '%s' "$input" | bash -c "$ORIG"              # guards ARMED: untouched passthrough
+if [[ ! -f "$DISABLE_FLAG" && ( -z "$DRIFT_FLAG" || ! -f "$DRIFT_FLAG" ) ]]; then
+  printf '%s' "$input" | bash -c "$ORIG"              # guards ARMED, no drift: untouched passthrough
   exit 0
 fi
 
-# Guards DISARMED: buffer your output and append the marker.
+# Guards DISARMED and/or drift flagged: buffer your output and append marker(s).
 #
 # Deliberately IGNORE your command's exit status. Command substitution has
 # already captured whatever it printed, and showing that is the correct
@@ -58,12 +63,27 @@ fi
 # This branch is NOT byte-identical to the armed one: command substitution
 # strips trailing newlines, so a statusline ending in `echo` loses its final \n
 # here. Harmless (Claude Code trims the statusline anyway) — but the header's
-# "byte-for-byte" promise describes the ARMED path, not this one.
+# "byte-for-byte" promise describes the ARMED, no-drift path, not this one.
 # ${out:+$out } supplies the separating space only when there IS output, so a
 # command that prints nothing renders "[cc-off]", not " [cc-off]".
 out="$(printf '%s' "$input" | bash -c "$ORIG")" || true
-if [[ "${CC_STATUSLINE_NOCOLOR:-0}" == "1" ]]; then
-  printf '%s%s' "${out:+$out }" '[cc-off]'
-else
-  printf '%s%s' "${out:+$out }" $'\033[33m[cc-off]\033[0m'
+tags=()
+[[ -f "$DISABLE_FLAG" ]] && tags+=('[cc-off]')
+if [[ -n "$DRIFT_FLAG" && -f "$DRIFT_FLAG" ]]; then
+  dv=""; IFS= read -r dv < "$DRIFT_FLAG" || true
+  mk="${CC_VERIFY_MARKER:-${CC_ROOT:-$HOME/.claude/cost-control}/manifest/.verify-dispatched}"
+  m=""; [[ -f "$mk" ]] && { IFS= read -r m < "$mk" || true; }
+  if [[ -n "$dv" && "$m" == *"\"version\":\"$dv\""* && ( "$m" == *'"status":"started"'* || "$m" == *'"status":"dispatched"'* ) ]]; then
+    tags+=("[cc-verifying v${dv}]")
+  else
+    tags+=("[cc-stale${dv:+ v$dv}]")
+  fi
 fi
+for t in "${tags[@]}"; do
+  if [[ "${CC_STATUSLINE_NOCOLOR:-0}" == "1" ]]; then
+    out="${out:+$out }$t"
+  else
+    out="${out:+$out }"$'\033[33m'"$t"$'\033[0m'
+  fi
+done
+printf '%s' "$out"

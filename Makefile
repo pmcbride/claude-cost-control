@@ -60,7 +60,7 @@ quick-test:
 sync:
 	@test -d $(INSTALL_DIR) || { echo "Not installed yet — run 'make install' first."; exit 1; }
 	rsync -a --delete \
-	  --exclude 'version.lock' --exclude '.drift' --exclude 'last-run.log' \
+	  --exclude 'version.lock' --exclude '.drift' --exclude '.verify-dispatched' --exclude 'last-run.log' \
 	  $(REPO_DIR)hooks $(REPO_DIR)statusline $(REPO_DIR)tests $(REPO_DIR)manifest \
 	  $(INSTALL_DIR)/
 	rsync -a --delete $(REPO_DIR)dashboard $(REPO_DIR)project-templates $(INSTALL_DIR)/

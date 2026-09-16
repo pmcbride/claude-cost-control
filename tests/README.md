@@ -37,7 +37,9 @@ and after install. The only token-bearing additions, all bounded and asserted:
 - throttle nudge: ~70 words per user prompt, only at ≥70% usage
 - deny reasons: ~50 words, only when a spawn/fan-out is refused — each denial
   *replaces* an entire subagent run, so the net usage effect is negative
-- version-check message: once per install / Claude Code update
+- version-check message: none by default — `CC_VERIFY_MODE=background` starts a
+  detached `claude --bg` verify session instead of speaking in the chat; only
+  `CC_VERIFY_MODE=inline` injects the old once-per-update message
 - the `cost-control-verify` skill: token-spend by design, gated to version
   changes or explicit request
 

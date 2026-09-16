@@ -193,7 +193,9 @@ fi
 
 hdr "4. Seed the version baseline"
 if [[ $DRY -eq 1 ]]; then say "[dry-run] would run version-check.sh to write version.lock"
-else CC_ROOT="$DEST" "$DEST/hooks/version-check.sh" >/dev/null 2>&1 || true
+# CC_VERIFY_MODE=off: seed the lock only. Never let install (or the sandboxed
+# test-install suite) launch a background `claude --bg` verify session.
+else CC_VERIFY_MODE=off CC_ROOT="$DEST" "$DEST/hooks/version-check.sh" >/dev/null 2>&1 || true
      say "version.lock: $(cat "$DEST/manifest/version.lock" 2>/dev/null || echo '(claude --version not found; will seed on first session)')"
 fi
 
