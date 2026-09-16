@@ -97,6 +97,21 @@ Nesting defaults to **3 layers** below the main conversation
 (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`, *not enforced in ultracode sessions*), and since
 v2.1.224 there is **no total-per-session spawn cap** at all.
 
+**Dynamic-workflow `agent()` stages are the one gap in the above.** They are not
+PreToolUse `Agent` calls — workflows.md: an unpinned stage "runs on your session's
+model." Measured 2026-09-09..16: 143 workflow-subagent spawns, 0 PreToolUse gate
+decisions (74.5% of spawns, ~36.5% of the week's tokens). `hooks/guard-workflow.sh`
+gates the one reachable choke point instead — the `Workflow` tool call that launches
+the script (matcher `Workflow`; `Workflow` is a documented PreToolUse-matchable tool
+name, and workflows.md names a PreToolUse allow/deny hook as one of the ways a launch
+clears permission evaluation). It denies every launch at `CC_BUDGET_SOFT_PCT` and, at
+`CC_BUDGET_WARN_PCT` (or forced via `CC_WORKFLOW_REQUIRE_STAGE_MODEL=1`), lints
+`script`/`scriptPath` text for unpinned or blocked-model `agent()` calls — a heuristic
+paren/quote-aware scanner, not a JS parser (see the hook's header for documented FP/FN
+cases). This is a **launch-time floor only**: it cannot gate a stage an
+already-running workflow spawns mid-run. See README "How the workflow launch gate
+works" and "Honest limitations".
+
 ### Deny, never rewrite
 
 `guard-subagent-model.sh` refuses spawns; it never changes a model. Deny-not-rewrite is what
@@ -180,8 +195,9 @@ excludes them by design.
   that override is load-bearing.
 - Tunables are all `CC_*` env vars (`CC_ROOT`, `CC_BUDGET_{WARN,SOFT,HARD}_PCT`,
   `CC_BLOCK_MODELS`, `CC_STATE_MAX_AGE`, `CC_BUDGET_EXEMPT_RE`, `CC_WATCHDOG_*`,
-  `CC_USAGE_TMP_{DIR,TTL_MIN}`, `CC_USAGE_SWEEP_EVERY_MIN`, …). Add new knobs the same way,
-  with a default that preserves current behavior.
+  `CC_USAGE_TMP_{DIR,TTL_MIN}`, `CC_USAGE_SWEEP_EVERY_MIN`,
+  `CC_WORKFLOW_REQUIRE_STAGE_MODEL`, `CC_WORKFLOW_SCRIPT_MAX_BYTES`, …). Add new knobs
+  the same way, with a default that preserves current behavior.
 - Requires `jq`. The optional `dashboard/` needs Docker.
 
 ## Document map
