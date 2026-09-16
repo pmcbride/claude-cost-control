@@ -45,6 +45,9 @@ grep -qF 'cost-control-discipline' "$CLAUDE_CONFIG_DIR/CLAUDE.md" \
   && ok "CLAUDE.md block appended with marker" || bad "CLAUDE.md appended" ""
 [[ -f "$CLAUDE_CONFIG_DIR/skills/cost-control/SKILL.md" && -x "$CLAUDE_CONFIG_DIR/cost-control/cost-control.sh" ]] \
   && ok "/cost-control skill + toggle script installed" || bad "toggle installed" "$(ls "$CLAUDE_CONFIG_DIR/skills" "$CLAUDE_CONFIG_DIR/cost-control" 2>/dev/null | head -8)"
+[[ -f "$CLAUDE_CONFIG_DIR/skills/usage-report/SKILL.md" && -x "$CLAUDE_CONFIG_DIR/cost-control/dashboard/gate-coverage.sh" ]] \
+  && ok "/usage-report skill + gate-coverage.sh installed at the paths the skill references" \
+  || bad "usage-report installed" "$(ls "$CLAUDE_CONFIG_DIR/skills" "$CLAUDE_CONFIG_DIR/cost-control/dashboard" 2>/dev/null | head -12)"
 SL_CMD="$(jq -r '.statusLine.command' "$S")"
 [[ "$SL_CMD" == *statusline-wrap.sh* && "$SL_CMD" == *my-fancy-statusline.sh* ]] \
   && ok "pre-existing custom statusline PRESERVED via statusline-wrap" || bad "statusline preserved" "$SL_CMD"

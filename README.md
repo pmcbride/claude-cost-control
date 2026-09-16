@@ -105,6 +105,7 @@ manifest/
 skills/
   cost-control-verify/SKILL.md    self-updating validator: diffs current-version docs vs claims.json, patches the bundle
   cost-control/SKILL.md           /cost-control on|off|status — instant toggle, manual-invoke only
+  usage-report/SKILL.md           /usage-report — session-report analyzer + gate coverage + live window + OTel, joined
 agents/
   explore.md / worker.md / reviewer.md   example haiku/sonnet/opus agents w/ frontmatter-replicated gate (nested spawns)
 output-styles/
@@ -116,6 +117,7 @@ dashboard/
   docker-compose.yml + configs    OTel Collector + Prometheus + Tempo + Grafana
   grafana/dashboards/…            usage dashboard (tokens/cost/session, drill-down)
   parse_transcripts.py            no-infra local usage report ("which subagent burned it")
+  gate-coverage.sh                spawns that reached the spawn gate vs bypassed it (agent-events × model-guard logs)
   telemetry.env.example           the env to stream telemetry to the stack
   README.md                       dashboard quickstart
 ```
@@ -176,6 +178,7 @@ Requires `jq` (statusline + hooks + tests) and, for the dashboard, Docker.
 | Live 5-hour usage in the status bar | `statusline/usage-statusline.sh` (native `rate_limits` — no polling) |
 | Cheaper subagents *without* overriding frontmatter | frontmatter pinning + `hooks/guard-subagent-model.sh` (deny, don't rewrite) + `CLAUDE.snippet.md` rubric |
 | Telemetry dashboard w/ session/subagent drill-down | `dashboard/` (Grafana metrics + Tempo traces + `parse_transcripts.py`) |
+| Where usage went AND whether the guards could have stopped it | `/usage-report` (`skills/usage-report` + `dashboard/gate-coverage.sh`) |
 | A guardrail that winds down spikes safely | `hooks/guard-usage-budget.sh` (blocks new work) + `hooks/watchdog-usage.sh` (stops runaway background sessions) |
 | Responses that get terser as usage climbs | `hooks/throttle.sh` (UserPromptSubmit self-throttle) |
 | A hard cap so fable can't be spent by accident | `managed-settings.snippet.json` (`availableModels`) |

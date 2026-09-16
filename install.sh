@@ -90,7 +90,7 @@ done
 [[ -d "$SRC/project-templates" ]] && run "cp -a '$SRC/project-templates' '$DEST/'"
 run "cp -a '$SRC/output-styles/terse.md' '$CLAUDE_DIR/output-styles/'"
 run "cp -a '$SRC/agents/'*.md '$CLAUDE_DIR/agents/'"
-run "cp -a '$SRC/skills/cost-control-verify' '$SRC/skills/cost-control' '$CLAUDE_DIR/skills/'"
+run "cp -a '$SRC/skills/cost-control-verify' '$SRC/skills/cost-control' '$SRC/skills/usage-report' '$CLAUDE_DIR/skills/'"
 # Ship the source dirs INSIDE the bundle too, so the installed tree is a
 # complete install source and its offline suite (tests/test-install.sh) is
 # self-contained. Replaced WHOLESALE on every install so the in-bundle copies
