@@ -18,6 +18,7 @@ equivalent).
 ## Option B — live Grafana dashboard (drill-down over time)
 
 ```bash
+mkdir -p ~/.claude/logs/otel && chmod 777 ~/.claude/logs/otel   # one-time, see "Persistence" below
 docker compose up -d
 ```
 
@@ -27,6 +28,38 @@ Then enable telemetry for Claude Code (see `telemetry.env.example` — the
 - Grafana: http://localhost:3000 → *Claude Code / Usage & Cost* (anon admin)
 - Collector raw metrics: http://localhost:8889/metrics
 - Prometheus: http://localhost:9090
+
+### Persistence — what survives what
+
+All four services run `restart: unless-stopped`, so they come back after a
+Docker or host restart as long as Docker itself is set to start on login
+(Docker Desktop → Settings → General → "Start Docker Desktop when you sign
+in"). Data survival per signal:
+
+| Signal | Where it lives | Survives container recreation? | Survives `make sync`? |
+|---|---|---|---|
+| Metrics (Prometheus) | `prom-data` docker volume | ✅ | ✅ (volume, not bind mount) |
+| Traces (Tempo) | `tempo-data` docker volume | ✅ | ✅ |
+| **Logs** (per-request events) | `~/.claude/logs/otel/claude-code-logs.json` (host bind mount) | ✅ | ✅ |
+
+Logs are bind-mounted to a **host** path, not stored under `dashboard/`,
+because `make sync` does `rsync -a --delete` of the repo's `dashboard/` into
+the installed copy at `~/.claude/cost-control/dashboard` — anything written
+inside that tree would be wiped on the next sync. The collector container
+runs as the image's non-root uid `10001`, so the host directory needs to be
+writable by it before first start (`chmod 777` above is the quick path; on a
+shared host prefer `chown -R 10001:10001 ~/.claude/logs/otel` instead). The
+file is JSON Lines (one OTLP log batch per line), rotated by the collector at
+50 MB / 5 backups (`dashboard/otel-collector-config.yaml`, `file` exporter) —
+it will not grow unbounded.
+
+**To stop telemetry for good**: `docker compose down` (add `-v` to also drop
+the Prometheus/Tempo volumes — this does *not* touch `~/.claude/logs/otel/`,
+delete that separately if you want it gone too), then remove or comment out
+`CLAUDE_CODE_ENABLE_TELEMETRY` / `OTEL_EXPORTER_OTLP_ENDPOINT` from
+`~/.claude/settings.json`'s `env` block and restart Claude Code. Telemetry
+enabled with the stack down doesn't error — Claude Code just drops every
+OTLP export at the network layer (see "Telemetry on, stack down" below).
 
 **Metrics** (Prometheus) give aggregate burn by model / session / token-type over
 time — and, verified against docs, also by **subagent**: the
