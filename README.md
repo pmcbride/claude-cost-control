@@ -41,6 +41,43 @@ global `CLAUDE_CODE_SUBAGENT_MODEL=haiku` is now a safe roster-preserving floor.
 The old override behavior is opt-in via `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`
 (v2.1.257+), which discards the roster entirely.
 
+## How the workflow launch gate works (verified vs code.claude.com docs, 2026-09-16)
+
+Dynamic workflows fan out `agent()` stages from a JS script a runtime executes
+in the background — and those stage spawns are **not** PreToolUse `Agent`
+calls, so `guard-subagent-model.sh`/`guard-usage-budget.sh` never see them.
+workflows.md is explicit that an unpinned stage "runs on your session's
+model." Measured on this install (2026-09-09..16): 143 workflow-subagent
+spawns, **0** PreToolUse gate decisions on them — 74.5% of all spawns and
+~36.5% of the week's tokens went ungated (`dashboard/gate-coverage.sh`).
+
+The one reachable choke point is the **`Workflow` tool call that launches the
+script** — a normal PreToolUse-gateable call (`hooks.md` lists `Workflow`
+among the matchable built-in tool names; `workflows.md` "Approve the plan
+before it runs" names a `PreToolUse` allow/deny hook as one of the ways a
+launch clears permission evaluation in the CLI, `claude -p`, and the Agent SDK
+alike). `hooks/guard-workflow.sh` registers there (matcher `Workflow`) and:
+
+- **≥ `CC_BUDGET_SOFT_PCT` (80):** denies every workflow launch outright — a
+  workflow is itself a fan-out of potentially dozens-to-hundreds of spawns,
+  the same reason the SOFT band denies all new `Agent`/`Task` spawns.
+- **≥ `CC_BUDGET_WARN_PCT` (70)** (or always, with `CC_WORKFLOW_REQUIRE_STAGE_MODEL=1`):
+  lints the launch's script text (`tool_input.script`, or the file at
+  `tool_input.scriptPath`, which takes precedence per the SDK docs) for any
+  `agent(` call with no explicit `model` key, or one naming a model matching
+  `CC_BLOCK_MODELS` (default `fable`), and denies the launch if it finds one.
+  The lint is a heuristic paren/quote-aware scanner, not a JS parser — see the
+  header comment in `hooks/guard-workflow.sh` for its documented false-positive
+  and false-negative cases. A `name`-only (saved/built-in) workflow or a
+  `resumeFromRunId` resume carries no script text to lint here, so only the
+  SOFT-band rule applies to those.
+- **Below WARN** (and not forced): zero bytes, same invariant as every other
+  guard here.
+
+This is a **launch-time floor**, not per-stage gating — it cannot stop an
+already-running workflow from spawning an unpinned stage mid-run. See "Honest
+limitations" below.
+
 ## What you'll actually notice day-to-day (and the kill switch)
 
 Below 70% of the 5-hour window, **nothing** — the guards emit zero bytes, the
@@ -86,6 +123,7 @@ statusline/
   statusline-wrap.sh              keep YOUR statusline for display, still feed the guards' state file
 hooks/
   guard-subagent-model.sh         PreToolUse(Agent|Task): DENY fable / unspecified-model spawns (preserves frontmatter)
+  guard-workflow.sh               PreToolUse(Workflow): DENY launches at SOFT+; lint unpinned/blocked agent() stages at WARN+
   guard-usage-budget.sh           PreToolUse(*): DENY new fan-out as the 5h window fills (banded, fails open)
   throttle.sh                     UserPromptSubmit: inject "be terse / stop fanning out" as usage climbs
   watchdog-usage.sh               standalone poller: claude stop runaway background sessions on a burn spike
@@ -211,6 +249,12 @@ than the one below it, so the thresholds must stay ordered:
   alive in the HARD band); `CC_BUDGET_DISABLE=1` at session launch to bypass;
   `CC_STATE_MAX_AGE` (900s fail-open).
 - Model guard: `CC_BLOCK_MODELS` ("fable"), `CC_REQUIRE_EXPLICIT_MODEL` (0/1).
+- Workflow guard: reuses `CC_BUDGET_WARN_PCT`/`CC_BUDGET_SOFT_PCT`/
+  `CC_BLOCK_MODELS`/`CC_STATE_MAX_AGE` above; adds
+  `CC_WORKFLOW_REQUIRE_STAGE_MODEL` (0/1 — 1 lints at ANY usage %, not just
+  WARN+) and `CC_WORKFLOW_SCRIPT_MAX_BYTES` (65536 — caps how much
+  script/scriptPath text the lint reads, bounding its cost on a pathologically
+  large script).
 - Watchdog: `CC_WATCHDOG_STOP_PCT` (94), `CC_WATCHDOG_INTERVAL` (30s),
   `CC_WATCHDOG_MAX_STOP` (1), `CC_WATCHDOG_DRYRUN`, `CC_WATCHDOG_INCLUDE_BLOCKED`.
 - Shared: `CC_USAGE_STATE` (state file path), `CC_*_LOG` (log paths).
@@ -226,8 +270,12 @@ thresholds, or set the env vars in that project's shell.
 
 - **Hooks stop *new* work, not in-flight fan-outs.** The watchdog stops runaway
   *background sessions* but can't freeze a mid-flight workflow. Workflow-internal
-  stage spawns may bypass PreToolUse — control those with the *session* model +
-  per-stage `opts.model`.
+  stage spawns still bypass PreToolUse individually (see "How the workflow
+  launch gate works" above) — `guard-workflow.sh` only gates the *launch*, by
+  denying outright at SOFT+ usage and by linting for unpinned/blocked-model
+  `agent()` stages at WARN+. It cannot stop a stage an already-running workflow
+  spawns mid-run; control those with the *session* model + explicit per-stage
+  `{model, effort}` in every `agent()` call.
 - **The budget gate disarms in unattended sessions.** Its state file is written
   by the statusline, so headless/background sessions stop refreshing it and the
   gate fails open after 15 minutes (by design — fail-open beats wedging). The

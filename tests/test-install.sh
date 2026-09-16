@@ -33,12 +33,16 @@ fi
 S="$CLAUDE_CONFIG_DIR/settings.json"
 [[ -x "$CLAUDE_CONFIG_DIR/cost-control/hooks/guard-subagent-model.sh" ]] \
   && ok "hooks installed + executable" || bad "hooks installed" "$(ls "$CLAUDE_CONFIG_DIR/cost-control/hooks" 2>/dev/null)"
+[[ -x "$CLAUDE_CONFIG_DIR/cost-control/hooks/guard-workflow.sh" ]] \
+  && ok "guard-workflow.sh installed + executable" || bad "guard-workflow.sh installed" "$(ls "$CLAUDE_CONFIG_DIR/cost-control/hooks" 2>/dev/null)"
 [[ -f "$CLAUDE_CONFIG_DIR/output-styles/terse.md" && -f "$CLAUDE_CONFIG_DIR/agents/explore.md" ]] \
   && ok "output-style + agents installed" || bad "style/agents installed" ""
 jq -e '.model=="opus" and .env.MY_VAR=="keepme" and .hooks.Stop[0].hooks[0].command=="~/my-notify.sh"' "$S" >/dev/null \
   && ok "pre-existing user config survived the merge" || bad "user config survived" "$(jq -c . "$S")"
 jq -e '.hooks.PreToolUse | map(.matcher) | index("Agent|Task") != null' "$S" >/dev/null \
   && ok "spawn guard registered on PreToolUse Agent|Task" || bad "spawn guard registered" "$(jq -c '.hooks.PreToolUse' "$S")"
+jq -e '.hooks.PreToolUse | map(.matcher) | index("Workflow") != null' "$S" >/dev/null \
+  && ok "workflow guard registered on PreToolUse Workflow" || bad "workflow guard registered" "$(jq -c '.hooks.PreToolUse' "$S")"
 jq -e '.hooks | has("TaskCreated") | not' "$S" >/dev/null \
   && ok "no TaskCreated registration (task-list event)" || bad "no TaskCreated" "$(jq -c '.hooks|keys' "$S")"
 grep -qF 'cost-control-discipline' "$CLAUDE_CONFIG_DIR/CLAUDE.md" \

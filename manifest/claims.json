@@ -472,6 +472,30 @@
           "what": "NOT wired — proposed HITL only; setting a cap changes session behavior"
         }
       ]
+    },
+    {
+      "id": "workflow-launch-gating",
+      "summary": "Whether the Workflow tool call itself is a normal PreToolUse-gateable call, and what its tool_input carries.",
+      "verdict": "CONFIRMED",
+      "confidence": "high",
+      "current_value": "VERIFIED 2026-09-16 vs v2.1.273 docs (curl of hooks.md, workflows.md, agent-sdk/typescript.md). hooks.md:1581 lists `Workflow` explicitly among PreToolUse-matchable built-in tool names alongside `Agent`: 'built-in tools such as `Bash`, `PowerShell`, `Edit`, `Write`, `Read`, `Glob`, `Grep`, `Agent`, `Workflow`, `WebFetch`, `WebSearch`, `AskUserQuestion`, and `ExitPlanMode`'. workflows.md \"Approve the plan before it runs\" (line 185) names the mechanism directly: 'A `PreToolUse` hook: a hook that returns `allow` for the call approves it', alongside a permission rule, Auto mode, Bypass mode, and a host's --permission-prompt-tool/canUseTool/PermissionRequest hook, as the five ways a Workflow launch clears permission evaluation in the CLI, `claude -p`, and the Agent SDK alike. Separately (workflows.md:415), an unpinned `agent()` stage 'runs on your session's model' — i.e. workflow-internal stage spawns do NOT themselves cross the Agent-tool PreToolUse surface guard-subagent-model.sh/guard-usage-budget.sh gate; the Workflow tool call is the only reachable choke point for a launch-time floor. agent-sdk/typescript.md \"### Workflow\" (WorkflowInput, v0.3.149+) confirms the exact tool_input shape guard-workflow.sh parses: `script` (inline JS, must start `export const meta = { name, description }`), `name` (resolved from a built-in/saved workflow), `scriptPath` (\"Takes precedence over `script` and `name`\"), `args` (opaque value, not parsed here), `resumeFromRunId` (same-session resume handle). At least one of script/name/scriptPath is required by the tool's own contract.",
+      "since_version": "Workflow tool: Agent SDK v0.3.149+. PreToolUse matcher coverage for Workflow: same doc generation as the rest of the v2.1.x hooks.md table (no version-gated introduction found; treated as stable at baseline).",
+      "doc_urls": [
+        "https://code.claude.com/docs/en/hooks.md",
+        "https://code.claude.com/docs/en/workflows.md",
+        "https://code.claude.com/docs/en/agent-sdk/typescript.md"
+      ],
+      "verify": "doc-fetch hooks.md PreToolUse matcher list + workflows.md 'Approve the plan before it runs' + agent-sdk/typescript.md '### Workflow' WorkflowInput table; live: launch a workflow with an unpinned agent() stage at simulated WARN-band usage, expect a deny entry in workflow-guard.jsonl and no run started.",
+      "affects": [
+        {
+          "file": "hooks/guard-workflow.sh",
+          "what": "PreToolUse matcher \"Workflow\"; tool_input.{script,scriptPath,name,resumeFromRunId} field names; scriptPath precedence order"
+        },
+        {
+          "file": "settings.snippet.json",
+          "what": "guard registered on PreToolUse matcher \"Workflow\""
+        }
+      ]
     }
   ]
 }

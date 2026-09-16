@@ -18,6 +18,7 @@
   "//subagentModelEnv": "PRECEDENCE FLIPPED IN v2.1.251: CLAUDE_CODE_SUBAGENT_MODEL is now a DEFAULT, not an override. Order is (1) per-invocation model, (2) frontmatter model: (inherit = session model), (3) this env var, (4) session model — sub-agents.md: 'Before v2.1.251, CLAUDE_CODE_SUBAGENT_MODEL came first in this order and overrode both the per-invocation parameter and the frontmatter.' So setting it globally to haiku/sonnet is now SAFE (frontmatter and explicit spawns still win) and is the 'default cheap' knob that used to not exist. inherit == unset (v2.1.196+). The old steamroll lives in CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1 (v2.1.257+): it ignores every definition's model:, including built-in Explore/Plan, and Claude cannot pass a model; set alone it forces every subagent onto the MAIN conversation's model (dangerous on an Opus/Fable lead). Forks and 'model: inherit' skills stay on the main model either way.",
 
   "//spawnGating": "Verified vs code.claude.com docs 2026-07-16: a subagent spawn IS a PreToolUse call on the Agent tool (renamed from Task in v2.1.63; Task still aliases), and PreToolUse is the ONLY hook surface that can block it (JSON permissionDecision deny). SubagentStart fires on spawn but CANNOT block (context-injection only) — registered below for audit logging. TaskCreated is the task-LIST event (TaskCreate tool), unrelated to spawns — deliberately NOT registered. Run tests/test-hooks.sh offline, then the cost-control-verify self-test live.",
+  "//workflowGating": "Verified vs code.claude.com docs 2026-09-16 (v2.1.273): dynamic-workflow agent() stages are NOT PreToolUse Agent calls — workflows.md#choose-a-model: an unpinned stage 'runs on your session's model'. The only reachable choke point is the Workflow tool call that LAUNCHES the script: workflows.md 'Approve the plan before it runs' names 'A PreToolUse hook: a hook that returns allow for the call approves it' as one of the ways a Workflow launch clears permission evaluation in the CLI/SDK/-p paths alike. guard-workflow.sh denies every launch at CC_BUDGET_SOFT_PCT (80, same as all-spawns-denied) and, at CC_BUDGET_WARN_PCT (70) or with CC_WORKFLOW_REQUIRE_STAGE_MODEL=1, lints script/scriptPath text for unpinned or blocked-model agent() stages. It cannot gate stages inside an already-launched run. See tests/test-workflow-guard.sh.",
 
   "hooks": {
     "SessionStart": [
@@ -30,6 +31,10 @@
       {
         "matcher": "Agent|Task",
         "hooks": [ { "type": "command", "command": "~/.claude/cost-control/hooks/guard-subagent-model.sh", "timeout": 10 } ]
+      },
+      {
+        "matcher": "Workflow",
+        "hooks": [ { "type": "command", "command": "~/.claude/cost-control/hooks/guard-workflow.sh", "timeout": 10 } ]
       },
       {
         "matcher": "*",
