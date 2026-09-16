@@ -88,10 +88,23 @@ v2.1.224 there is **no total-per-session spawn cap** at all.
 
 ### Deny, never rewrite
 
-`guard-subagent-model.sh` refuses spawns; it never changes a model. `CLAUDE_CODE_SUBAGENT_MODEL`
-is a highest-precedence *override* (it beats both per-invocation `model` and frontmatter), so
-it cannot express "default cheap, let frontmatter win" — never set it globally. Deny-not-rewrite
-is what keeps the per-agent roster in `agents/` authoritative.
+`guard-subagent-model.sh` refuses spawns; it never changes a model. Deny-not-rewrite is what
+keeps the per-agent roster in `agents/` authoritative.
+
+⚠️ **The original reason for this design was retracted by the platform in v2.1.251.**
+`CLAUDE_CODE_SUBAGENT_MODEL` *was* a highest-precedence override, so it could not express
+"default cheap, let frontmatter win". As of v2.1.251 it is a **default** — resolution is
+per-invocation `model` > frontmatter `model:` (`inherit` = session model) > this env var >
+session model (sub-agents.md: *"Before v2.1.251, `CLAUDE_CODE_SUBAGENT_MODEL` came first in
+this order and overrode both the per-invocation parameter and the frontmatter"*). Setting it
+globally is now safe and roster-preserving. The old semantics are opt-in via
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` (v2.1.257+), which ignores every definition's `model:`
+— built-in Explore/Plan included — and, set alone, pins every subagent to the main model.
+
+The hook is still the hard floor for what the env var cannot do: it **denies** an explicit
+`model: fable` spawn outright instead of silently downgrading it, it can require an explicit
+model at all (`CC_REQUIRE_EXPLICIT_MODEL`), and it logs every spawn decision. Both guards
+resolve the model in the v2.1.251 order and honor `..._FORCE`; keep them in sync.
 
 ### Fail-open is a requirement, not an accident
 
@@ -141,9 +154,14 @@ excludes them by design.
 
 - **Never introduce a repo-relative path into an installed file.** Hooks, settings entries,
   and skills all reference `~/.claude/cost-control` as a fixed path.
-- `settings.snippet.json` uses `//`-prefixed comment keys. User/project settings are validated
-  **strictly** — a stray `//` key rejects the whole file and silently kills every hook. The
-  install merge strips them; a hand-merge must too (`tests/test-merge.sh` pins this).
+- `settings.snippet.json` uses `//`-prefixed comment keys. Strip them on any hand-merge into a
+  real settings file — the install merge does (`tests/test-merge.sh` pins this). Since the
+  v2.1.233-era docs the failure is scoped, not total: a whole-file JSON/schema error raises a
+  *Settings Error* dialog (fix / exit / continue-without) interactively and is skipped silently
+  in `-p` runs, while individually bad entries raise a *Settings Warning* and the rest of the
+  file stays live. **Managed** settings are the strict case now: since v2.1.259 a managed file,
+  drop-in, MDM plist, or HKLM value that can't be parsed makes Claude Code **refuse to start**
+  and name the source — validate `managed-settings.snippet.json` before placing it.
 - Every hook's rationale lives in its own header comment, including which doc claim it depends
   on. Keep those in sync when behavior changes.
 - `agents/*.md` must carry an explicit `model:` — never `inherit`, never `fable`. `explore.md`

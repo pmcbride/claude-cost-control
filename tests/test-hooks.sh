@@ -79,9 +79,29 @@ is_allow && ok "SubagentStart: observe-only, exit 0 (cannot block per docs)" || 
 run_hook "$GUARD_MODEL" '{not even json'
 is_allow && ok "fails open on garbage payload" || bad "garbage payload fail-open" "$OUT/$CODE"
 
+# --- CLAUDE_CODE_SUBAGENT_MODEL precedence (REVERSED in v2.1.251) -------------
+# sub-agents.md#choose-a-model: per-spawn model > frontmatter > env var > session.
+# "Before v2.1.251, CLAUDE_CODE_SUBAGENT_MODEL came first in this order and
+# overrode both the per-invocation parameter and the frontmatter."
 OUT="$(payload PreToolUse Agent haiku | CLAUDE_CODE_SUBAGENT_MODEL=fable bash "$GUARD_MODEL")" ; CODE=$?
+[[ $CODE -eq 0 && -z "$OUT" ]] \
+  && ok "env var does NOT override an explicit model (v2.1.251+: it is a default)" || bad "env-as-default: explicit model must win" "$OUT/$CODE"
+
+OUT="$(payload PreToolUse Agent '' | CLAUDE_CODE_SUBAGENT_MODEL=fable bash "$GUARD_MODEL")" ; CODE=$?
 printf '%s' "$OUT" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null 2>&1 \
-  && ok "denies when global env override forces fable (mirrors documented precedence)" || bad "env override deny" "$OUT/$CODE"
+  && ok "env var applies as the default when no explicit model was passed" || bad "env-as-default: no-model spawn" "$OUT/$CODE"
+
+OUT="$(payload PreToolUse Agent haiku | CLAUDE_CODE_SUBAGENT_MODEL=fable CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1 bash "$GUARD_MODEL")" ; CODE=$?
+printf '%s' "$OUT" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null 2>&1 \
+  && ok "_FORCE=1 restores the pre-v2.1.251 override (denies despite explicit haiku)" || bad "_FORCE override deny" "$OUT/$CODE"
+
+OUT="$(payload PreToolUse Agent haiku | CLAUDE_CODE_SUBAGENT_MODEL=fable CLAUDE_CODE_SUBAGENT_MODEL_FORCE=0 bash "$GUARD_MODEL")" ; CODE=$?
+[[ $CODE -eq 0 && -z "$OUT" ]] \
+  && ok "_FORCE=0 is off (explicit model still wins)" || bad "_FORCE=0 must be off" "$OUT/$CODE"
+
+OUT="$(payload PreToolUse Agent haiku | CLAUDE_CODE_SUBAGENT_MODEL=inherit bash "$GUARD_MODEL")" ; CODE=$?
+[[ $CODE -eq 0 && -z "$OUT" ]] \
+  && ok "env var 'inherit' == unset (v2.1.196+)" || bad "inherit == unset" "$OUT/$CODE"
 
 echo "== guard-usage-budget.sh =="
 
@@ -209,6 +229,27 @@ printf '%s' "$OUT" | grep -q $'\033' \
 OUT="$(printf '{"model":{"display_name":"X"}}' | CC_STATUSLINE_NOCOLOR=1 bash "$STATUSLINE")"; CODE=$?
 [[ $CODE -eq 0 ]] && printf '%s' "$OUT" | grep -q "5h n/a" \
   && ok "degrades gracefully when rate_limits absent (API/non-subscription)" || bad "rate_limits absent" "$OUT/$CODE"
+
+# --- REGRESSION (bug found + fixed 2026-09-08) ------------------------------
+# An absent rate_limits window must still produce a VALID state file with the
+# other fields intact. The original jq wrote `$fp|select(.!="")|tonumber? // null`
+# per value; with an empty $fp the pipeline was already empty when `//` ran, so
+# jq emitted ZERO results for the whole object -> a 0-byte state file that also
+# lost context_pct and model. v2.1.266 made this routine, not exotic:
+# "Claude Code drops a window once its resets_at time passes" (statusline.md).
+rm -f "$CC_USAGE_STATE"
+printf '{"model":{"display_name":"X"},"context_window":{"used_percentage":42}}' \
+  | CC_STATUSLINE_NOCOLOR=1 bash "$STATUSLINE" >/dev/null 2>&1
+[[ -s "$CC_USAGE_STATE" ]] \
+  && jq -e '.five_hour_pct == null and .context_pct == 42 and .model == "X" and .updated_at != null' \
+       "$CC_USAGE_STATE" >/dev/null 2>&1 \
+  && ok "rate_limits absent -> state file is still VALID JSON with other fields (not 0 bytes)" \
+  || bad "absent-window state file" "bytes=$(wc -c < "$CC_USAGE_STATE" 2>/dev/null) $(cat "$CC_USAGE_STATE" 2>/dev/null)"
+
+printf '{"hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"model":"sonnet"}}' \
+  | bash "$GUARD_BUDGET" >/dev/null 2>&1
+[[ $? -eq 0 ]] \
+  && ok "guard fails open on a null-pct state file (absent window != 0%)" || bad "null-pct fail-open" "$?"
 
 rm -f "$CC_USAGE_STATE"
 OUT="$(printf '%s' "$SL_IN" | CC_STATUSLINE_STATE_ONLY=1 bash "$STATUSLINE")"; CODE=$?

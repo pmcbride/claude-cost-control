@@ -3,13 +3,19 @@
 # subagent spawns WITHOUT touching your per-agent model roster.
 #
 # WHY THIS EXISTS (the core insight):
-#   CLAUDE_CODE_SUBAGENT_MODEL is a highest-precedence OVERRIDE, not a default —
-#   docs (model-config.md env-var table): "Overrides the per-invocation `model`
-#   parameter and the subagent definition's `model` frontmatter." So you can NOT
-#   express "default cheap, let frontmatter win" with that env var.
-#   This hook gives you the missing piece: frontmatter/per-invocation model stays
-#   authoritative, and the hook only DENIES the spawns you never want — it never
-#   rewrites a model. Deny-not-rewrite is what preserves your roster.
+#   ORIGINALLY: CLAUDE_CODE_SUBAGENT_MODEL was a highest-precedence OVERRIDE, so
+#   you could NOT express "default cheap, let frontmatter win" with it, and this
+#   hook was the only way to get a floor without discarding the roster.
+#   AS OF v2.1.251 THAT REVERSED — the env var is now a DEFAULT (order: per-spawn
+#   model > frontmatter > env var > session model; sub-agents.md: "Before
+#   v2.1.251, CLAUDE_CODE_SUBAGENT_MODEL came first in this order and overrode
+#   both the per-invocation parameter and the frontmatter"), and the old override
+#   lives in CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1 (v2.1.257+).
+#   THIS HOOK IS STILL THE HARD FLOOR, for reasons the env var can't cover: it
+#   DENIES rather than rewrites (so an explicit `model: fable` spawn is refused
+#   outright instead of silently downgraded), it can require an explicit model at
+#   all (CC_REQUIRE_EXPLICIT_MODEL), and it logs every spawn decision.
+#   Deny-not-rewrite is what preserves your roster.
 #
 # SPAWN SURFACE (re-verified against code.claude.com docs 2026-08-09, v2.1.226):
 #   * A subagent spawn IS a PreToolUse tool call on the `Agent` tool (renamed
@@ -85,10 +91,30 @@ fi
 # model was resolved in the single-pass parse above: .tool_input.model (the
 # Agent tool's per-invocation model parameter) with cheap fallbacks. Empty =>
 # "no explicit model" (frontmatter or session model will apply).
-# A global override, if set, wins over everything (mirrors documented precedence:
-# env var > per-invocation model > frontmatter > session model — sub-agents.md),
-# so we evaluate what will actually run, not just what was requested.
-[[ -n "${CLAUDE_CODE_SUBAGENT_MODEL:-}" && "${CLAUDE_CODE_SUBAGENT_MODEL}" != "inherit" ]] && model="${CLAUDE_CODE_SUBAGENT_MODEL}"
+#
+# PRECEDENCE REVERSED IN v2.1.251 — sub-agents.md#choose-a-model now resolves:
+#   1. the per-invocation `model` parameter        <- what we parsed above
+#   2. the definition's frontmatter `model:`       <- invisible to this hook
+#   3. CLAUDE_CODE_SUBAGENT_MODEL                  <- a DEFAULT, not an override
+#   4. the main conversation's model
+# docs, verbatim: "Before v2.1.251, CLAUDE_CODE_SUBAGENT_MODEL came first in this
+# order and overrode both the per-invocation parameter and the frontmatter."
+# So the env var applies ONLY when no explicit model was passed. The old
+# steamroll behavior is opt-in via CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1 (v2.1.257+),
+# which ignores every definition's model: (built-in Explore/Plan included) and
+# stops Claude passing a model at all.
+# CAVEAT: in the no-explicit-model branch, frontmatter still outranks the env var
+# and we cannot see frontmatter — so this can deny wrong only if the env var
+# itself names a BLOCKED model, which policy forbids anyway.
+env_model="${CLAUDE_CODE_SUBAGENT_MODEL:-}"
+[[ "$env_model" == "inherit" ]] && env_model=""          # inherit == unset (v2.1.196+)
+force="$(printf '%s' "${CLAUDE_CODE_SUBAGENT_MODEL_FORCE:-}" | tr '[:upper:]' '[:lower:]')"
+case "$force" in ""|0|false|no|off) force=0 ;; *) force=1 ;; esac
+if [[ "$force" == "1" ]]; then
+  [[ -n "$env_model" ]] && model="$env_model"            # FORCE: env wins over everything
+elif [[ -z "$model" && -n "$env_model" ]]; then
+  model="$env_model"                                     # no explicit model: env is the default
+fi
 
 log() { printf '%s\n' "$(jq -nc --arg e "$event" --arg t "$tool" --arg m "${model:-}" --arg st "${subagent_type:-}" \
         --arg act "$1" --arg why "$2" --arg ts "$(date -u +%FT%TZ)" \

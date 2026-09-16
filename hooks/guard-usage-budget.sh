@@ -85,7 +85,21 @@ now="$(date +%s)"
 five_i="$(printf '%.0f' "$five" 2>/dev/null || printf '%s' "$five")"
 [[ "$five_i" =~ ^[0-9]+$ ]] || exit 0
 
-[[ -n "${CLAUDE_CODE_SUBAGENT_MODEL:-}" && "${CLAUDE_CODE_SUBAGENT_MODEL}" != "inherit" ]] && model="${CLAUDE_CODE_SUBAGENT_MODEL}"
+# Model resolution mirrors sub-agents.md#choose-a-model as of v2.1.251:
+#   per-spawn model > frontmatter (invisible here) > CLAUDE_CODE_SUBAGENT_MODEL >
+#   session model. Docs, verbatim: "Before v2.1.251, CLAUDE_CODE_SUBAGENT_MODEL
+#   came first in this order and overrode both the per-invocation parameter and
+#   the frontmatter." CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1 (v2.1.257+) restores the
+#   old unconditional override. Keep in sync with guard-subagent-model.sh.
+env_model="${CLAUDE_CODE_SUBAGENT_MODEL:-}"
+[[ "$env_model" == "inherit" ]] && env_model=""          # inherit == unset (v2.1.196+)
+force="$(printf '%s' "${CLAUDE_CODE_SUBAGENT_MODEL_FORCE:-}" | tr '[:upper:]' '[:lower:]')"
+case "$force" in ""|0|false|no|off) force=0 ;; *) force=1 ;; esac
+if [[ "$force" == "1" ]]; then
+  [[ -n "$env_model" ]] && model="$env_model"
+elif [[ -z "$model" && -n "$env_model" ]]; then
+  model="$env_model"
+fi
 
 # Exemption: tools you always want to allow (cheap capture MCPs, etc.)
 if [[ -n "$EXEMPT_RE" ]] && printf '%s' "$tool" | grep -Eq "$EXEMPT_RE"; then exit 0; fi
