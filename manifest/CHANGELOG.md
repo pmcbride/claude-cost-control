@@ -6,6 +6,44 @@ and which files were patched. Newest at top. Never edit past entries.
 
 ---
 
+## 2026-09-16 — drift check v2.1.272 → v2.1.273
+
+Triggered by the version-check hook (`.drift` = 2.1.273). Verified against raw
+primary-source markdown (curl of 16 `code.claude.com/docs/en/*.md` pages incl.
+the changelog, then a scripted + manual grep of every stored quote). Live docs
+track **v2.1.273** (changelog top entry dated September 15, 2026). No subagents used.
+
+**17/17 claims re-matched. No verdict changed. No executable guardrail touched.**
+The scripted matcher flagged 13 quote fragments (ellipsis splits, markdown link
+text, backticks); each was re-found by hand:
+
+| Claim | Re-found at |
+|---|---|
+| `spawn-tool-input-schema` | hooks.md:1751-1754 `prompt`/`description`/`subagent_type`/`model` rows |
+| `agent-frontmatter-hooks` | sub-agents.md:236 *"plugin subagents don't support the `hooks`, `mcpServers`, or `permissionMode` frontmatter fields"*; :306 `omitClaudeMd`; :33 Explore/Plan skip CLAUDE.md |
+| `nested-spawn-hooks` | hooks.md:267 *"Hooks from settings files, managed policy settings, and plugins also run inside subagents"*; sub-agents.md:714 |
+| `explore-agent-model` | sub-agents.md:45 *"named `Explore` overrides the built-in and keeps its own `model` field"* |
+| `workflow-size-config` | workflows.md:434 *"`medium` \| Fewer than 10 agents"*, :437 default, :411 25-agent threshold rule, :357/:360 caps; settings-reference.md:4010 |
+| `telemetry-metrics` | monitoring-usage.md:145 `OTEL_METRICS_INCLUDE_REPOSITORY` |
+| `hooks-context-injection` | changelog.md:335 (`--continue`/`--resume` no longer wait for SessionStart hooks) |
+| `subagent-fanout-caps` | sub-agents.md:1022 *"Sessions with ultracode active are exempt"* |
+| `max-effort-level` | settings-reference.md:1008 cap text, :1013 *"a cap below `xhigh` makes ultracode unavailable"* |
+
+### ➕ In-range deltas recorded (prose only)
+
+| Delta | Verbatim / effect |
+|---|---|
+| Agent names un-redactable on metrics (v2.1.273) | Changelog *"Changed `OTEL_LOG_TOOL_DETAILS=1` to also include real agent, skill, plugin and MCP server names on cost and token metrics"*. monitoring-usage.md:599 not yet updated. `dashboard/README.md` "no un-redaction switch" paragraph corrected |
+| Subagent result delivery fix (v2.1.273) | *"Fixed sub-agents and background agents being reported as failed, with their result never delivered, when the final streamed reply omitted token usage or carried no model id"* — no guard impact; explains any pre-273 `SubagentStop` rows with failed status |
+| Gateway hint headers (v2.1.273) | `x-claude-code-agent-type` etc. behind `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` — gateway-side attribution only; not used by this bundle |
+
+### 🧪 Live checks
+
+- Offline suite: see PR for `make test` result.
+- Spawn-gate DENY self-test: tracked separately as bead `ccc-248`.
+
+---
+
 ## 2026-09-15 — drift check v2.1.267 → v2.1.272
 
 Triggered by the version-check hook (`.drift` = 2.1.272). Verified against raw
