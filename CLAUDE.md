@@ -44,6 +44,17 @@ Consequence: **if the statusline stops running, the guards disarm.** That is del
 (fail-open), but it means headless/background sessions have no coverage — that gap is what
 `hooks/watchdog-usage.sh` exists to fill, as a standalone poller, not a hook.
 
+The write is write-to-temp + atomic rename, and the temp goes to
+`~/.claude/cache/cost-control/` (`CC_USAGE_TMP_DIR`) — **under** the state file's directory so
+it stays on the same filesystem and the rename stays atomic. Anything that kills the script
+between those two steps strands the temp, so three layers bound it: a trap (catchable
+signals), the cache dir (an orphan never lands in `~/.claude/`), and an hourly sweep of temps
+older than `CC_USAGE_TMP_TTL_MIN`, which is the only cover for SIGKILL. The sweep also drains
+the legacy location beside the state file. Its schedule lives in the stamp file's *name*
+(`.sweep-after-<epoch>`), not its mtime, so the common path is a glob and an integer compare —
+**no fork**. This runs every `statusLine.refreshInterval` seconds in every open session; keep
+new work out of its hot path (`tests/test-performance.sh` budgets 40ms/call).
+
 ### Escalation ladder — monotonic, must stay ordered
 
 | % of 5h window | Effect |
@@ -168,8 +179,9 @@ excludes them by design.
   pins `model: haiku` because the built-in Explore stopped forcing Haiku around v2.1.198, so
   that override is load-bearing.
 - Tunables are all `CC_*` env vars (`CC_ROOT`, `CC_BUDGET_{WARN,SOFT,HARD}_PCT`,
-  `CC_BLOCK_MODELS`, `CC_STATE_MAX_AGE`, `CC_BUDGET_EXEMPT_RE`, `CC_WATCHDOG_*`, …). Add new
-  knobs the same way, with a default that preserves current behavior.
+  `CC_BLOCK_MODELS`, `CC_STATE_MAX_AGE`, `CC_BUDGET_EXEMPT_RE`, `CC_WATCHDOG_*`,
+  `CC_USAGE_TMP_{DIR,TTL_MIN}`, `CC_USAGE_SWEEP_EVERY_MIN`, …). Add new knobs the same way,
+  with a default that preserves current behavior.
 - Requires `jq`. The optional `dashboard/` needs Docker.
 
 ## Document map
