@@ -53,11 +53,14 @@ heavy session where you want everything cheap regardless of the roster.
 **Bound fan-out.** Workflow agents inherit the *session* model unless a stage
 overrides it — so keep heavy/workflow sessions on Opus (plan-included), not
 Fable (bills credits past the promo allowance). Workflow size defaults to
-`medium` (<15) as of v2.1.219, so that needs no action — set
+`medium` — **<10 agents since v2.1.271** (was <15), and `small` (<5) on Pro
+plans — so that needs no action; set
 `workflowSizeGuideline: "small"` in `~/.claude/settings.json` when you want it
-tighter (that key overrides the `/config` row; since the v2.1.233-era docs a
-chosen guideline also lowers the `Large workflow` warning threshold to its own
-agent count — `medium` warns at >15 instead of >25). Cap concurrent
+tighter (that key overrides the `/config` row; a chosen guideline also replaces
+the `Large workflow` warning's 25-agent threshold with its own count — an
+explicit `medium` warns at >10). Since v2.1.271 a workflow that hits the usage
+limit **pauses and resumes itself at reset** (while `autoContinueAtUsageLimit`
+is on) instead of failing those agents. Cap concurrent
 subagents at 2–3 unless there's a named reason for more — the platform's own
 ceiling is `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`, default **20**, and it is
 **not enforced at all in ultracode sessions**. Nesting defaults to **3 layers**

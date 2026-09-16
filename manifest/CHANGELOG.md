@@ -6,6 +6,70 @@ and which files were patched. Newest at top. Never edit past entries.
 
 ---
 
+## 2026-09-15 — drift check v2.1.267 → v2.1.272
+
+Triggered by the version-check hook (`.drift` = 2.1.272). Verified against raw
+primary-source markdown (curl of 17 `code.claude.com/docs/en/*.md` pages + the
+changelog + local grep). Live docs track **v2.1.272** (changelog top entry dated
+September 15, 2026) — binary and docs aligned. No subagents used.
+
+**16/17 claims re-matched verbatim. One verdict changed:
+`workflow-size-config` CONFIRMED → CHANGED.** No executable guardrail touched.
+
+### ⚠️ CHANGED — `workflow-size-config` (v2.1.271)
+
+Changelog, verbatim: *"Changed the default dynamic workflow size to small on Pro
+plans and lowered the medium size guideline from 15 to 10 agents."* Docs agree:
+
+| Source | Verbatim |
+|---|---|
+| workflows.md:436 | *"`medium` \| Fewer than 10 agents"* |
+| workflows.md:438 | *"The default is `medium`, or `small` when you're signed in on a Pro plan with Claude Code v2.1.271 or later"* |
+| workflows.md:412 | *"its agent count replaces the 25-agent threshold"* (unchanged rule) |
+
+Consequence: an explicit `medium` now warns at **>10** agents, not >15. Runtime
+caps unchanged (16 concurrent, 1,000 per run). Prose corrected in
+`CLAUDE.snippet.md`, `session-topology-and-controls.md`, ADR §5 + §7 row 3, and
+the `//dynamicWorkflowSize` comment in `settings.snippet.json`.
+
+### ➕ In-range deltas recorded (prose only)
+
+| Delta | Verbatim / effect |
+|---|---|
+| Workflows pause at the usage limit (v2.1.271) | workflows.md:391 *"the run pauses rather than failing that agent … the waiting agents run again and the run continues on its own"* — another unattended resume-and-burn path, gated by `autoContinueAtUsageLimit`. Added to topology table |
+| `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS` (v2.1.269) | Changelog *"(1–256) to raise the Workflow tool's per-run concurrent agent limit"* — changelog-only, not in workflows.md/env-vars.md yet. Added to topology table as "leave unset" |
+| `omitClaudeMd` frontmatter (v2.1.271) | sub-agents.md:33 *"Explore and Plan skip your CLAUDE.md files … Every other built-in and custom subagent loads both, unless its definition sets the `omitClaudeMd` field"* — **this bundle's user-level `Explore` override loads the full CLAUDE.md hierarchy the built-in skips.** See HITL |
+| Auto-mode subagent hand-back (v2.1.271) | *"a subagent reports back to its caller through a dedicated hand-back call that the safety classifier reviews"* — one more classifier call per subagent return; strengthens the keep-Sonnet-in-`availableModels` advice |
+| `OTEL_METRICS_INCLUDE_REPOSITORY` (v2.1.269) | monitoring-usage.md:145 `vcs.*` repo attributes on metrics — per-repo attribution option; not used here |
+| `/output-style [name]` re-added (v2.1.269) | Changelog says added; output-styles.md:37 still says *"removed in v2.1.91"*. Docs lag; no bundle impact |
+| Prompt-cache fixes (v2.1.269, v2.1.271) | Cache invalidation after output-limit resume / interrupted resume fixed; `/model` no longer warns falsely when switching back. Reinforces the v2.1.267 correction |
+
+### 🧪 Live self-test on this build
+
+- ✅ Spawn gate fires on v2.1.272: `model-guard.jsonl` has `"event":"PreToolUse","tool":"Agent","model":"sonnet",…,"action":"allow"` entries at 2026-09-15T08:14–08:15Z (post-update) — event, matcher, and `model` probe all working. Deny path covered offline; no fable spawn attempted.
+- ✅ Statusline sensor: `~/.claude/.usage-state.json` written 01:18 PDT with numeric `five_hour_pct` = 5.
+- ✅ Hooks registered in `~/.claude/settings.json`: PreToolUse ×2, SessionStart, UserPromptSubmit, SubagentStart, SubagentStop.
+- ✅ Offline suite: `tests/run-all.sh` — ALL TEST FILES PASSED, 0 FAIL.
+
+### 🔴 HITL — proposed, NOT applied
+
+1. **`omitClaudeMd: true` in `agents/explore.md`.** Restores the built-in
+   Explore's CLAUDE.md skip for this Haiku override, cutting ~global+project
+   CLAUDE.md tokens from every exploration spawn. Frontmatter = HITL.
+2. **Sync `~/.claude/CLAUDE.md`** `medium` (<15)/>15 → <10/>10 (lines ~250–254).
+   User's own instructions; not touched without a say-so.
+3. Carried over from 2026-09-10, still open: `maxEffortLevel` in
+   `settings.snippet.json`; `effort:` in `agents/*.md`.
+
+### Files patched (safe/auto)
+
+`manifest/claims.json` (17 claims re-stamped, 1 verdict change),
+`manifest/CHANGELOG.md`, `CLAUDE.snippet.md`, `session-topology-and-controls.md`,
+`ADR-claude-code-cost-control.md`, `settings.snippet.json` (comment key only),
+`manifest/version.lock` → 2.1.272, `manifest/.drift` removed.
+
+---
+
 ## 2026-09-10 — drift check v2.1.266 → v2.1.267
 
 Triggered by the version-check hook (`.drift` = 2.1.267). Verified against raw
