@@ -47,8 +47,10 @@ This version folds in a second research pass. Net changes from v1:
   confirms settings-level hooks fire inside subagents, so the settings gate
   already covers subagent-originated spawns (§0d, §7.11).
 - **Prompt-cache economics** added as first-class cost hygiene: subagents build
-  cold caches on a 5-min TTL; forks reuse the parent's cache; mid-session model
-  switches / CLAUDE.md edits / tool-set changes invalidate the cache.
+  cold caches on a 5-min TTL; forks reuse the parent's cache; mid-session
+  CLAUDE.md edits invalidate the cache. ⚠️ Narrowed at v2.1.267: mid-session
+  model switches and tool-set changes no longer break prefix reuse (tool
+  definitions are recorded once, late MCP/plugin tools arrive deferred).
 - **Session-topology controls** (`session-topology-and-controls.md`) now document
   the exact flags behind the local/in-session/worktree/cloud spawn dialog.
 
@@ -295,8 +297,9 @@ platform's own ceiling is 20, and is not enforced in ultracode sessions).
 | 10 | `availableModels` (+`enforceAvailableModels`, v2.1.175+) enforced at every model-selection layer incl. subagent frontmatter, the Agent tool's model param, and the subagent env override; managed settings parse tolerantly, user files strictly | code.claude.com/docs/en/model-config, /settings |
 | 11 | **RESOLVED (v2.1.226 docs):** settings.json PreToolUse DOES fire for subagent-originated tool calls — "Hooks from settings files, managed policy settings, and plugins also run inside subagents… `PreToolUse` and `PostToolUse` fire the same configured hooks as in the main conversation", carrying `agent_id`/`agent_type`. Frontmatter replication is now redundancy, except for plugin subagents (which ignore frontmatter `hooks:` and rely on the settings gate). Since v2.1.218 project-level frontmatter hooks additionally require workspace trust; user-level `~/.claude/agents/` are exempt | code.claude.com/docs/en/hooks, /sub-agents |
 | 12 | Subagent frontmatter fields incl. `hooks`, `model` (sonnet/opus/haiku/fable/full-ID/inherit), `effort`, `background`, `isolation: worktree`, `maxTurns`; nested spawns v2.1.172+, **depth default 3 layers and configurable via `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`** (v2.1.219; was 1 in v2.1.217–218, fixed-5 before); background-by-default v2.1.198+; concurrency cap `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` default 20 (v2.1.217+, ultracode exempt); **no total-per-session spawn cap since v2.1.224** | code.claude.com/docs/en/sub-agents |
-| 13 | Cache economics: subagents cold-cache 5-min TTL, main convo 1-hr TTL on-plan, forks reuse parent cache; mid-session model/CLAUDE.md/tool changes invalidate | hub-and-spoke research + prompt-caching docs |
+| 13 | Cache economics: subagents cold-cache 5-min TTL, main convo 1-hr TTL on-plan, forks reuse parent cache; mid-session CLAUDE.md edits invalidate. ⚠️ **Narrowed v2.1.267** — mid-session *model switches* and *tool-set changes* no longer break prefix reuse: `/model` stopped re-sending every tool definition, late MCP/plugin tools arrive as deferred definitions, and subagents / `--system-prompt` sessions record prompt + tool defs once | hub-and-spoke research + prompt-caching docs + /changelog v2.1.267 |
 | 14 | Session controls: `claude agents` / `--json` (entries: `id`, `startedAt`, `state` ∈ working\|blocked\|done\|failed\|stopped), `claude stop/attach/logs/respawn/rm`, `/bg`, `disableAgentView`/`CLAUDE_CODE_DISABLE_AGENT_VIEW` | code.claude.com/docs/en/agent-view |
+| 15 | **NEW v2.1.267 — `maxEffortLevel`**: caps the session's effort level *"on every provider, including Bedrock, Vertex and Foundry"*; one of `low`/`medium`/`high`/`xhigh`/`max` (`max` = no cap), default unset. Overrides anything higher — `/effort`, the `/model` picker, `--effort`, `CLAUDE_CODE_EFFORT_LEVEL`, and a skill's or subagent's `effort` frontmatter. Scope `Any file`, and **the lowest cap across scopes wins** (a lower scope cannot raise it), so it is enforceable from managed settings. *"A cap below `xhigh` makes ultracode unavailable on the models the cap applies to"* — the only documented lever against ultracode, whose fan-out ignores `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`. Per-model exemption via that model's `modelSettings` entry, effective only within the same settings source. **Not set by this bundle** | code.claude.com/docs/en/settings-reference |
 
 ## 8. Rollout
 
