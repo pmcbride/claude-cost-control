@@ -16,6 +16,11 @@ services:
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
       - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+      # Log events land here (host path), NOT under dashboard/ — `make sync`
+      # rsyncs --delete over dashboard/ and would wipe anything stored inside it.
+      # Runs as the image's non-root uid 10001; see README.md for the one-time
+      # `mkdir -p` + permissions step.
+      - ${HOME}/.claude/logs/otel:/var/log/otel
     ports:
       - "4317:4317"   # OTLP gRPC   <- point Claude Code here
       - "4318:4318"   # OTLP HTTP

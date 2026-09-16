@@ -31,9 +31,15 @@ exporters:
     endpoint: tempo:4317
     tls:
       insecure: true
-  # Handy while setting up: also print to collector logs
-  debug:
-    verbosity: normal
+  # Logs -> host-bind-mounted JSON lines (see docker-compose.yml volume comment).
+  # Claude Code's per-request log events have no other pipeline here, so
+  # persisting them is the only way they survive the collector container
+  # exiting. Rotated so an idle collector can't fill the disk.
+  file:
+    path: /var/log/otel/claude-code-logs.json
+    rotation:
+      max_megabytes: 50
+      max_backups: 5
 
 service:
   pipelines:
@@ -48,4 +54,4 @@ service:
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [file]
