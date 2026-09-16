@@ -39,10 +39,14 @@ splitting main-vs-subagent burn works without traces.
 verbatim. Other user-defined agent names are replaced with `"custom"`." This
 bundle's `worker`/`reviewer` agents therefore collapse into a single `custom`
 series — you can see *that* custom subagents burned tokens, not *which one*.
-There is **no un-redaction switch for this metric attribute**: as of the
-v2.1.226 docs, `OTEL_LOG_TOOL_DETAILS=1` un-redacts `workflow.name`, tool-span
-attributes, and log-event fields, but the `agent.name` definition on the token
-counter carries no such gate (verified 2026-08-09 — don't burn time hunting one).
+**Un-redaction switch (v2.1.273+):** the v2.1.273 changelog says *"Changed
+`OTEL_LOG_TOOL_DETAILS=1` to also include real agent, skill, plugin and MCP
+server names on cost and token metrics"*. Set it and `worker`/`reviewer` appear
+as their own series. This is changelog-only so far — monitoring-usage.md:599
+still documents `agent.name` without the gate (re-checked 2026-09-16) — so
+confirm against a live `claude_code_token_usage_tokens_total` scrape before
+relying on it. Before v2.1.273 there was no such switch; the flag only
+un-redacted `workflow.name`, tool-span attributes, and log-event fields.
 
 Practical splits, best first:
 
