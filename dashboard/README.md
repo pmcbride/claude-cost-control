@@ -74,6 +74,43 @@ Metrics browser), find the real names + label keys (`model`, `session_id`,
 `type`), and update the panel queries. This is a one-time 5-minute fix and the
 top panel of the dashboard repeats these instructions.
 
+## Gate coverage — did the guards even see it?
+
+```bash
+./gate-coverage.sh --since 7d          # add --json for machine-readable
+```
+
+Options A and B say *what burned*. Neither says whether the spawn gate had a
+chance to stop it. `gate-coverage.sh` joins the two logs the bundle already
+writes — `SubagentStart` rows in `~/.claude/logs/agent-events.jsonl` against
+`PreToolUse` decisions in `~/.claude/logs/model-guard.jsonl` — per agent type.
+A type with starts but no decisions never passed through `PreToolUse`, so no
+hook here could have refused it.
+
+The documented case is Workflow `agent()` stages. First measured run
+(2026-09-09 → 09-16): **143 `workflow-subagent` spawns, 0 gate decisions** — 74.5%
+of all spawns in the window, carrying 36.5% of the week's tokens per the
+session-report analyzer. Their only controls are the session model and an
+explicit `opts.model` + `effort` on every stage.
+
+Matching is by count per type (gate rows carry no `agent_id`), so `ungated` is a
+floor when a type's gate rows outnumber its starts. Fails soft on missing logs.
+
+## Telemetry on, stack down
+
+If `settings.json` sets `CLAUDE_CODE_ENABLE_TELEMETRY=1` with an OTLP endpoint
+but `docker compose` isn't running, every session exports to a dead endpoint and
+the data is **dropped, not buffered**. Starting the stack later captures from
+that point on; it cannot backfill. Options A and gate coverage read local files
+and are unaffected — they are the only history for any window the stack was down.
+
+## One report across all of it
+
+The `/usage-report` skill runs the live window check, the session-report
+analyzer (or Option A as fallback), gate coverage, and — when the stack is up —
+Prometheus queries, then joins them: tokens by ungated agent type is the number
+none of the sources produces alone.
+
 ## What each answers
 
 | Question | Tool |
@@ -82,3 +119,5 @@ top panel of the dashboard repeats these instructions.
 | Which model/session/subagent burned it? | `parse_transcripts.py --by agent`, or Grafana table |
 | Burn rate over time, by model/type | Grafana timeseries |
 | Exact call tree of a fan-out | Tempo traces (enhanced telemetry) |
+| Could the spawn gate have stopped it? | `gate-coverage.sh` |
+| All of the above, joined | `/usage-report` |
