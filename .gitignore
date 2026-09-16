@@ -5,3 +5,4 @@
 # Only version.lock.example is tracked.
 manifest/version.lock
 manifest/.drift
+manifest/.verify-dispatched

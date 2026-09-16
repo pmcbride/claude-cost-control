@@ -142,7 +142,7 @@ bytes**, so the prompt Claude Code sends is byte-identical to an uninstalled sys
 ### Kill switch
 
 Flag file `~/.claude/cost-control/.disabled`. Every active component checks it first and
-exits 0. OFF disables the two guards, the throttle, and version-check messages; it leaves the
+exits 0. OFF disables the two guards, the throttle, and version-check messages/background dispatch; it leaves the
 statusline and the passive agent-event log running. It does **not** lift the managed-settings
 `availableModels` gate (OS-level, sudo to remove).
 
@@ -163,7 +163,16 @@ custom statusline would otherwise never show it.
 `manifest/claims.json` records every version-dependent claim, its verbatim doc quote, a
 verdict (CONFIRMED / PARTIAL / UNVERIFIED), and what breaks if it changes.
 `hooks/version-check.sh` compares `claude --version` against `manifest/version.lock` at
-SessionStart and, on drift, asks for the `cost-control-verify` skill.
+SessionStart. On drift (or first run) it writes `.drift` and — by default
+(`CC_VERIFY_MODE=background`) — emits **nothing** into the chat: it launches one detached
+`claude --bg` session running `cost-control-verify` non-interactively (safe updates only,
+HITL proposals written to the CHANGELOG, lock bumped only when nothing HITL is pending).
+Dedupe marker `manifest/.verify-dispatched` (per version, `CC_VERIFY_REDISPATCH_HOURS`=12);
+the child inherits `CC_VERIFY_CHILD=1` so it never re-dispatches. `inline` restores the old
+`additionalContext` request, `off` only writes `.drift`. `install.sh` seeds the lock with
+`CC_VERIFY_MODE=off` so installs and the sandboxed install test never spawn a real session.
+Both statuslines append `[cc-verifying vX]` / `[cc-stale vX]` while `.drift` exists (one
+`[[ -f ]]` on the no-drift path; the wrapper stays a byte-for-byte passthrough then).
 
 **Manifest drift is the one place the installed copy leads the repo.** The verify skill
 patches `~/.claude/cost-control/manifest/`. Copy those back and commit *before* the next sync
@@ -173,7 +182,7 @@ or sync reverts them:
 cp ~/.claude/cost-control/manifest/{claims.json,CHANGELOG.md} manifest/ && git diff
 ```
 
-`version.lock`, `.drift`, `.disabled`, and `last-run.log` are runtime state — `make sync`
+`version.lock`, `.drift`, `.verify-dispatched`, `.disabled`, and `last-run.log` are runtime state — `make sync`
 excludes them by design.
 
 ## Conventions

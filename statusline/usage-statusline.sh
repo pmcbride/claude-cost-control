@@ -112,6 +112,24 @@ fi
 # /cost-control off marker — guards are no-oping; make that visible at a glance
 DISABLE_FLAG="${CC_DISABLE_FLAG:-${CC_ROOT:-$HOME/.claude/cost-control}/.disabled}"
 [[ -f "$DISABLE_FLAG" ]] && seg+=("${YEL}[cc-off]${RST}")
+# stale-verify marker (added 2026-09-16) — manifest/.drift exists => the bundle
+# has not been verified against the installed Claude Code. [cc-verifying vX] while
+# a background verify dispatch for that version is live, else [cc-stale vX].
+# No-drift path is one [[ -f ]] test; the drift path uses `read` builtins, no forks.
+# Keep in sync with statusline-wrap.sh. CC_STATUSLINE_STALE_TAG=0 disables.
+if [[ "${CC_STATUSLINE_STALE_TAG:-1}" != "0" ]]; then
+  cc_df="${CC_DRIFT_FLAG:-${CC_ROOT:-$HOME/.claude/cost-control}/manifest/.drift}"
+  if [[ -f "$cc_df" ]]; then
+    cc_dv=""; IFS= read -r cc_dv < "$cc_df" || true
+    cc_mk="${CC_VERIFY_MARKER:-${CC_ROOT:-$HOME/.claude/cost-control}/manifest/.verify-dispatched}"
+    cc_m=""; [[ -f "$cc_mk" ]] && { IFS= read -r cc_m < "$cc_mk" || true; }
+    if [[ -n "$cc_dv" && "$cc_m" == *"\"version\":\"$cc_dv\""* && ( "$cc_m" == *'"status":"started"'* || "$cc_m" == *'"status":"dispatched"'* ) ]]; then
+      seg+=("${YEL}[cc-verifying v${cc_dv}]${RST}")
+    else
+      seg+=("${YEL}[cc-stale${cc_dv:+ v$cc_dv}]${RST}")
+    fi
+  fi
+fi
 
 # join with a dim separator
 out=""; sep="${DIM} · ${RST}"

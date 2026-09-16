@@ -89,8 +89,8 @@ wrapped by `statusline/statusline-wrap.sh`, which silently writes the usage
 state file the budget guard needs (the bundle's statusline runs in state-only
 mode underneath). Your status bar looks identical; the guards still work. The always-on inventory: two PreToolUse hooks (one per tool
 call, one on spawns — ~10–25ms each), a per-prompt throttle check (silent below
-70%), a SessionStart version check (speaks only on first install and after
-`claude update`), a passive subagent audit log, and the CLAUDE.md discipline
+70%), a SessionStart version check (silent: after `claude update` it starts a background
+`claude --bg` verify session and tags the statusline `[cc-verifying vX]` / `[cc-stale vX]`), a passive subagent audit log, and the CLAUDE.md discipline
 block (prose guidance the model reads; no enforcement). Above 70% the ladder
 engages: fable spawns denied → 80% all new spawns denied + "be terse" nudge →
 90% heavy fan-out denied → 94% watchdog (only if you run it) stops background
@@ -191,15 +191,39 @@ hooks incl. the SessionStart version-check + UserPromptSubmit throttle,
 outputStyle — minus every `//` key), paste `CLAUDE.snippet.md` into
 `~/.claude/CLAUDE.md`, and restart Claude Code.
 
-**First-run baseline (do this once).** On the next session start the version-check
-hook will emit a `COST-CONTROL SETUP` message — run the **`cost-control-verify`**
-skill when it does. It verifies the version-dependent claims against your
+**First-run baseline (do this once).** `install.sh` seeds `manifest/version.lock`
+silently, so run the **`cost-control-verify`** skill once yourself. (With the manual
+steps, the first session start with no lock instead dispatches a background
+baseline run — see below.) It verifies the version-dependent claims against your
 installed version's docs, records the baseline in `manifest/`, and runs the LIVE
 self-test: spawn a `fable` subagent → expect a denial **and** a deny entry in
 `~/.claude/logs/model-guard.jsonl` (the log entry proves the hook fired, not the
 allowlist); confirm the statusline writes usage state; confirm `/hooks` lists the
 cost-control hooks. After that it stays silent until Claude Code updates, when
 it re-triggers automatically.
+
+**Background verify on update (default).** When Claude Code's version drifts from
+the pinned one, `version-check.sh` puts nothing in your chat. It writes
+`manifest/.drift` and starts one detached background session
+(`claude --bg`, see `claude agents`) that runs `cost-control-verify`
+non-interactively: safe updates applied, HITL/executable patches written into
+the CHANGELOG as proposals (not applied), lock bumped only when nothing HITL is
+pending. The statusline (bundle or wrapped custom) shows `[cc-verifying v2.1.273]`
+while that dispatch is live (marker status `dispatched`/`started`) and
+`[cc-stale v2.1.273]` once it failed, finished with HITL items for you
+(status `hitl-pending`), or none was dispatched — review the CHANGELOG, then run the skill yourself. Knobs:
+
+| Env var | Default | Effect |
+|---|---|---|
+| `CC_VERIFY_MODE` | `background` | `inline` = old in-chat SETUP/DRIFT message; `off` = only write `.drift` |
+| `CC_VERIFY_REDISPATCH_HOURS` | `12` | no second dispatch for the same version inside this window |
+| `CC_CLAUDE_BIN` | `claude` | binary used for `--bg` (tests stub it) |
+| `CC_VERIFY_DISPATCH_LOG` | `~/.claude/logs/cost-control-verify-dispatch.log` | launcher output + printed session id |
+| `CC_STATUSLINE_STALE_TAG` | `1` | `0` hides the `[cc-stale]` / `[cc-verifying]` tag |
+
+The dispatched session runs with `CC_VERIFY_CHILD=1` so its own SessionStart never
+re-dispatches; `/cost-control off` suppresses dispatch entirely; a missing
+`claude`/`jq` or a failed launch is silent (exit 0, `.drift` still written).
 
 Drop `STATUS.template.md` into a project as `STATUS.md`. Optional hardening:
 hand-place `managed-settings.snippet.json` at your OS managed-settings path

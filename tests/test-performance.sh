@@ -8,7 +8,8 @@
 #     token-bearing outputs are (a) the throttle nudge (~70 words, only ≥70%
 #     usage), (b) deny reasons (~50 words, only when a spawn is refused — which
 #     SAVES a subagent's whole cost), (c) version-check setup/drift messages
-#     (once per install/update). Net usage effect at high load is strongly
+#     (once per install/update, and only with CC_VERIFY_MODE=inline — the
+#     default background mode emits nothing into the chat). Net usage effect at high load is strongly
 #     NEGATIVE (denied fan-out >> nudge text).
 #   * Wall-clock: one bash+jq subprocess per tool call for the matcher-"*"
 #     budget guard, plus one for spawns. This test measures that latency and
@@ -51,6 +52,9 @@ bench "guard-usage-budget (every tool call)" "$ROOT/hooks/guard-usage-budget.sh"
 bench "guard-subagent-model (spawns only)"   "$ROOT/hooks/guard-subagent-model.sh" "$SPAWN"
 bench "throttle (once per user prompt)"      "$ROOT/hooks/throttle.sh" '{"hook_event_name":"UserPromptSubmit"}'
 bench "statusline (refresh cadence)"         "$ROOT/statusline/usage-statusline.sh" '{"model":{"display_name":"x"}}'
+# drift flagged: the stale-verify tag path (read builtins only, no extra forks)
+mkdir -p "$TMP/cc/manifest"; echo 9.9.9 > "$TMP/cc/manifest/.drift"
+CC_ROOT="$TMP/cc" bench "statusline + [cc-stale] tag (drift)" "$ROOT/statusline/usage-statusline.sh" '{"model":{"display_name":"x"}}'
 
 echo
 echo "== token/usage overhead (verified by construction + test-hooks.sh) =="

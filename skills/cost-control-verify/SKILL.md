@@ -18,11 +18,29 @@ hooks/agents/statusline/output-styles it governs.
 
 ## When this runs
 
-- **First install** — version-check hook emits `COST-CONTROL SETUP`. Establish the
-  baseline against the current version and run the self-test.
-- **After an update** — version-check hook emits `COST-CONTROL VERSION DRIFT
-  vX→vY`. Diff and update.
-- **On demand** — the user invokes it.
+- **After an update / first install (default: background)** — the version-check
+  hook does NOT speak in the user's chat. It writes `manifest/.drift` and starts ONE
+  detached background session (`claude --bg`, marker `manifest/.verify-dispatched`,
+  deduped per version for `CC_VERIFY_REDISPATCH_HOURS`, default 12h) whose prompt
+  asks for this skill non-interactively. The statusline shows `[cc-verifying vX]`
+  while that dispatch is live and `[cc-stale vX]` otherwise. In that mode **nobody
+  is watching — never ask questions**:
+  - apply only SAFE updates (policy below);
+  - write every HITL / executable-logic change into the vX CHANGELOG entry as a
+    full proposal (file, patch, rationale) and do **not** apply it;
+  - run the offline suite;
+  - bump `version.lock` and remove `.drift` **only** if nothing HITL is pending and
+    tests pass — otherwise leave both, say so in the CHANGELOG entry, and set `.status` to
+    `hitl-pending` in `manifest/.verify-dispatched`, so the statusline flips from
+    `[cc-verifying]` to `[cc-stale]` and keeps nudging the human to review;
+  - if the lock already pins the current version (not `baseline-pending`) and
+    `.drift` is gone, or the CHANGELOG already carries this version's entry with
+    HITL still pending, another run got there first — stop;
+  - don't spawn subagents, don't `make sync`/`install`.
+- **Inline mode** (`CC_VERIFY_MODE=inline`) — the hook emits the old
+  `COST-CONTROL SETUP` / `COST-CONTROL VERSION DRIFT vX→vY` message into the chat;
+  run the skill interactively as before (HITL items can be discussed live).
+- **On demand** — the user invokes it (e.g. after seeing `[cc-stale vX]`).
 
 If neither the hook nor the user prompted you and versions match
 (`claude --version` == `manifest/version.lock` pinned), say so and stop — don't
