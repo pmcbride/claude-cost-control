@@ -19,6 +19,10 @@ THROTTLE="$ROOT/hooks/throttle.sh"
 STATUSLINE="$ROOT/statusline/usage-statusline.sh"
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+# Isolate from the LIVE install: without this, a real manifest/.drift (Claude Code
+# just updated) or a real .disabled flag leaks into statusline/wrapper output.
+# Cases that need a flag set CC_ROOT / CC_DISABLE_FLAG explicitly.
+export CC_ROOT="$TMP"
 export CC_GUARD_LOG="$TMP/guard.jsonl"
 export CC_AGENT_EVENT_LOG="$TMP/events.jsonl"
 export CC_USAGE_STATE="$TMP/state.json"
