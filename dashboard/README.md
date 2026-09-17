@@ -76,7 +76,8 @@ series — you can see *that* custom subagents burned tokens, not *which one*.
 `OTEL_LOG_TOOL_DETAILS=1` to also include real agent, skill, plugin and MCP
 server names on cost and token metrics"*. Set it and `worker`/`reviewer` appear
 as their own series. This is changelog-only so far — monitoring-usage.md:599
-still documents `agent.name` without the gate (re-checked 2026-09-16) — so
+still documents `agent.name` without the gate (re-checked 2026-09-16 vs
+v2.1.274 docs, now monitoring-usage.md:599) — so
 confirm against a live `claude_code_token_usage_tokens_total` scrape before
 relying on it. Before v2.1.273 there was no such switch; the flag only
 un-redacted `workflow.name`, tool-span attributes, and log-event fields.
@@ -89,6 +90,12 @@ Practical splits, best first:
   opus = review), model ≈ role, and `model` is never redacted.
 - **Main vs subagent burn:** group by `query_source`
   (`"main"` / `"subagent"` / `"auxiliary"`).
+- **By effort level:** the cost and token counters carry an `effort` attribute
+  (`"low"`…`"max"`, absent when the model has no effort support —
+  monitoring-usage.md:598/617), so `sum by (model, effort) (...)` shows whether
+  `high`/`xhigh` stages are where the spend goes. v2.1.274 also added `effort`
+  to the `claude_code.llm_request` trace span (changelog), so a Tempo fan-out
+  tree shows each stage's effort too.
 - **Exact per-agent numbers:** Option A above (`parse_transcripts.py --by agent`
   reads local transcripts — no redaction), the per-spawn `PostToolUse`
   `tool_response` fields (`resolvedModel`, `totalTokens`, `usage{}`), or traces:

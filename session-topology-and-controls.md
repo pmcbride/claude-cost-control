@@ -63,6 +63,8 @@ draws down the same shared Max pool.
 | Prune skills that cost context and go unused | `/skill-doctor` (v2.1.261+) reports which loaded skills are unused and what they cost in context |
 | Strip command/code-execution tools entirely | `claude --restricted` / `CLAUDE_CODE_RESTRICTED=1` (v2.1.248+) — removes the tools that run commands or code and `WebFetch`, keeps file tools inside the working directory, refuses `bypassPermissions`, and ignores user/project/local settings files (**so it also disables this bundle's hooks**) |
 | Deny anything that would prompt, unattended | `--permission-prompts none` (v2.1.259+) — the active permission mode still decides; only the prompt is replaced with a denial |
+| Stop a headless first turn waiting on slow MCP servers | `CLAUDE_CODE_MCP_STARTUP_WAIT_MS` (v2.1.274+; `0` = don't wait) — bounds how long the first non-interactive turn waits for connecting MCP servers. Changelog only, not yet in env-vars.md. Not set by this bundle's background verify launcher |
+| Know what `/code-review` costs | v2.1.274+: *"Changed `/code-review` to use leaner inline review prompts for every model that has no tuned settings of its own, instead of spawning many review subagents"* — on untuned models a plain `/code-review` no longer fans out; `ultra` is still a separate cloud run. Changelog only |
 
 ⚠️ **There is no longer any total-per-session subagent cap.** The 200-spawns-per-session
 limit was removed in v2.1.224 ("long-running sessions no longer refuse new agents");

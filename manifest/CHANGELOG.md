@@ -6,6 +6,54 @@ and which files were patched. Newest at top. Never edit past entries.
 
 ---
 
+## 2026-09-16 (b) — drift check v2.1.273 → v2.1.274
+
+Triggered by the version-check hook (`.drift` = 2.1.274); run non-interactively in
+the background verify session. Verified against raw primary-source markdown (curl
+of 17 `code.claude.com/docs/en/*.md` pages incl. the changelog, then a scripted
+grep plus a hand re-match of the load-bearing quotes). Live docs track **v2.1.274**
+(changelog top entry dated September 17, 2026). No subagents used.
+
+**19/19 claims re-matched. No verdict changed. No executable guardrail touched.
+No HITL item pending.** Load-bearing quotes re-found at: hooks.md:267 (hooks run
+inside subagents), hooks.md:1754 (`subagent_type`), sub-agents.md:359 (*"Before
+v2.1.251, `CLAUDE_CODE_SUBAGENT_MODEL` came first in this order"*), :381/:396
+(`_FORCE`), :236 (plugin subagents ignore `hooks`), :45 (Explore override keeps
+`model`), :1022 (*"Sessions with ultracode active are exempt"*), :995 (spawn depth);
+model-config.md:782; workflows.md:434 (*"Fewer than 10 agents"*);
+settings-reference.md:693/1013 (`maxEffortLevel`, ultracode), :612
+(`autoContinueAtUsageLimit`), :816 (`workflowSizeGuideline`); statusline.md:193
+(`rate_limits`); monitoring-usage.md:145/217/599; cli-reference.md:74 (`--bg`),
+:137 (`--version`); managed-settings.md:40. The scripted matcher's misses were all
+markdown-link / backtick artifacts, each re-found by hand.
+
+### ➕ In-range deltas (v2.1.274, changelog-only; none alter a claim)
+
+| Delta | Verbatim | Bundle impact |
+|---|---|---|
+| `effort` on trace span | *"Added `effort` attribute to the `claude_code.llm_request` OpenTelemetry trace span, matching the `api_request` event"* | Prose: `dashboard/README.md` gained a "By effort level" split (cost/token counters already carry `effort`, monitoring-usage.md:598/617) |
+| Managed-settings OTel event | *"Added `claude_code.managed_settings_resolved` OTel event: managed-settings sources and policy helper state"* | None today; a future way to confirm the `availableModels` managed gate is actually loaded |
+| `/code-review` fan-out removed | *"Changed `/code-review` to use leaner inline review prompts for every model that has no tuned settings of its own, instead of spawning many review subagents"* | Prose: row added to `session-topology-and-controls.md` |
+| MCP startup wait bound | *"Added `CLAUDE_CODE_MCP_STARTUP_WAIT_MS` to bound how long the first non-interactive turn waits for connecting MCP servers (`0` = don't wait)"* | Prose: row added to topology doc. Not proposed for `hooks/version-check.sh`: the changelog scopes it to non-interactive turns, and whether it applies to a `--bg` session is undocumented, so there is no evidence it would help |
+| Headless completions batched | *"Fixed headless and SDK sessions making a separate model call for every background task that finished"* | Cost win only; no change |
+| Bedrock/Vertex `model: "opus"` subagents | *"Fixed subagents with `model: \"opus\"` on Bedrock, Vertex or Foundry leaving the session's model…"* | N/A (first-party install) |
+| `"type": "sdk"` MCP in agent files skipped | *"…skipped with a warning"* | N/A — no `agents/*.md` declares MCP servers |
+
+### 🩹 Stale prose from the v2.1.273 pass, fixed
+
+`skills/usage-report/SKILL.md` still said `OTEL_LOG_TOOL_DETAILS=1` could not
+un-redact `agent.name` on metrics; the v2.1.273 pass fixed only
+`dashboard/README.md`. Corrected to match (changelog-only, verify on a live scrape).
+
+### 🧪 Checks
+
+- Offline suite `tests/run-all.sh`: **173 PASS, 0 FAIL** (94 / 31 / 11 / 17 / 15 / 5).
+- `claude --bg` claim live-exercised: this verify run is itself a `--bg` session.
+- Spawn-gate DENY self-test: still tracked as bead `ccc-248` (not run; no subagents allowed in this mode).
+- `version.lock` → 2.1.274 `verified`; `manifest/.drift` removed.
+
+---
+
 ## 2026-09-16 — drift check v2.1.272 → v2.1.273
 
 Triggered by the version-check hook (`.drift` = 2.1.273). Verified against raw
