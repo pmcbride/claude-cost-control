@@ -112,9 +112,11 @@ curl -s "$P" --data-urlencode 'query=sum by (model) (increase(claude_code_cost_u
   against step 2's `overall.subagent` share — a large disagreement means one of the two
   sources is incomplete for the window, and that is worth saying.
 - ⚠️ **`agent.name` is redacted.** Built-in agents and official-marketplace plugin agents
-  appear verbatim; other user-defined agent names are replaced with `"custom"`. There is **no
-  un-redaction switch** for this metric attribute (`OTEL_LOG_TOOL_DETAILS=1` does not cover
-  it). Per-agent attribution comes from step 2, never from Grafana.
+  appear verbatim; other user-defined agent names are replaced with `"custom"`. Since
+  v2.1.273 `OTEL_LOG_TOOL_DETAILS=1` puts real agent names on cost and token metrics
+  (changelog only; monitoring-usage.md still documents the redaction without the gate), so
+  treat per-agent Grafana series as valid only if a live scrape shows real names. Per-agent
+  attribution comes from step 2 first.
 - Traces (Tempo, needs `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`) give the call tree of a
   specific fan-out — useful for explaining one expensive prompt from step 2, not for totals.
 
