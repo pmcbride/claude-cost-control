@@ -15,7 +15,10 @@
 #                   place. Preserves runtime state (version.lock, .drift,
 #                   .disabled, last-run.log) and NEVER touches settings.json or
 #                   CLAUDE.md (that's install's job). Runs the quick test suite
-#                   against the installed copy after.
+#                   against the installed copy after. Refuses to run if the
+#                   installed manifest/CHANGELOG.md has a verify entry the repo
+#                   doesn't (un-backported drift check — see "manifest drift" in
+#                   CLAUDE.md); override with `make sync FORCE=1`.
 #   make test       full offline suite against the REPO copy (pre-commit check)
 #   make status     /cost-control status from the shell
 #   make on / off   toggle the guardrails from the shell
@@ -29,6 +32,7 @@
 CLAUDE_DIR  ?= $(HOME)/.claude
 INSTALL_DIR ?= $(CLAUDE_DIR)/cost-control
 REPO_DIR    := $(dir $(realpath $(firstword $(MAKEFILE_LIST))))
+FORCE       ?= 0
 
 # Reference docs + snippets that ship INTO the installed bundle. The
 # cost-control-verify skill patches several of these at the installed path
@@ -59,6 +63,23 @@ quick-test:
 
 sync:
 	@test -d $(INSTALL_DIR) || { echo "Not installed yet — run 'make install' first."; exit 1; }
+	@# Safety net for manifest drift (CLAUDE.md "manifest drift"): if the
+	@# installed CHANGELOG has a top entry the repo's copy doesn't, a verify ran
+	@# on the installed tree and hasn't been backported into the repo yet (its
+	@# PR may still be open, or scripts/backport-verify.sh no-op'd because
+	@# $CC_REPO_DIR didn't resolve). rsync --delete would silently revert it.
+	@if [ -f $(INSTALL_DIR)/manifest/CHANGELOG.md ]; then \
+	  installed_heading="$$(awk '/^## /{print; exit}' $(INSTALL_DIR)/manifest/CHANGELOG.md)"; \
+	  if [ -n "$$installed_heading" ] && ! grep -qF "$$installed_heading" $(REPO_DIR)manifest/CHANGELOG.md; then \
+	    if [ "$(FORCE)" = "1" ]; then \
+	      echo "WARNING: installed tree has an un-backported verify entry: $$installed_heading — proceeding anyway (FORCE=1)"; \
+	    else \
+	      echo "REFUSING TO SYNC: installed tree has an un-backported verify entry: $$installed_heading"; \
+	      echo "  Backport it first (scripts/backport-verify.sh, or by hand — see CLAUDE.md \"manifest drift\"), or run 'make sync FORCE=1' to discard it."; \
+	      exit 1; \
+	    fi; \
+	  fi; \
+	fi
 	rsync -a --delete \
 	  --exclude 'version.lock' --exclude '.drift' --exclude '.verify-dispatched' --exclude 'last-run.log' \
 	  $(REPO_DIR)hooks $(REPO_DIR)statusline $(REPO_DIR)tests $(REPO_DIR)manifest \
