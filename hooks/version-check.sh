@@ -25,6 +25,21 @@
 #       with the SETUP / VERSION DRIFT text, unchanged.
 #   off    — only write .drift / the lock; no request at all.
 #
+# BACKPORT TO THE REPO (added 2026-09-16, see scripts/backport-verify.sh):
+#   The dispatched session patches the INSTALLED tree only. Since the repo is
+#   source of truth and `make sync` rsync --delete's manifest/ from repo ->
+#   installed, an un-backported verify is silently reverted on the next sync
+#   (this happened for real: v2.1.274 needed a manual backport, PR #21). So
+#   after a successful, non-HITL-blocked run the prompt below tells the child
+#   session to run `scripts/backport-verify.sh <version>` from the repo
+#   checkout at $CC_REPO_DIR (default
+#   ~/Claude/Projects/Agents/claude-cost-control) — it diffs the verify-patchable
+#   files, opens a worktree + branch (never the main checkout), runs the repo's
+#   test suite, commits, pushes, and opens a PR for human review (never merges).
+#   If $CC_REPO_DIR doesn't exist or isn't this repo, the script no-ops and the
+#   prompt tells the session to say so in the CHANGELOG entry instead of
+#   silently losing the drift.
+#
 # DISPATCH SAFETY:
 #   * dedupe: manifest/.verify-dispatched {version, dispatched_at, dispatched_epoch,
 #     status, session_id}. No second dispatch for the same version inside
@@ -104,7 +119,7 @@ dispatch_verify() {
   else
     prompt="Run the \`cost-control-verify\` skill NON-INTERACTIVELY for Claude Code v${cur} (last verified: v${from}; manifest/.drift is set). "
   fi
-  prompt+="You are a background session started by hooks/version-check.sh; no human is watching, so never ask questions. Bundle root: ${ROOT}. Rules: (1) If manifest/version.lock already pins ${cur} with a status other than baseline-pending and manifest/.drift is absent, another session already verified this version: stop without changes. If manifest/CHANGELOG.md already has an entry for v${cur} with HITL items still pending, do not re-verify: stop. (2) Apply ONLY the SAFE updates allowed by the skill's Safe-vs-HITL policy. (3) For every HITL / executable-logic change, write the full proposal (file, patch, rationale) into the v${cur} CHANGELOG entry and do NOT apply it. (4) Run the offline tests (tests/run-all.sh). (5) Bump version.lock to ${cur} and remove manifest/.drift ONLY if no HITL item is pending and tests pass; otherwise leave the lock and .drift untouched, say so explicitly in the CHANGELOG entry, and set .status to \"hitl-pending\" in manifest/.verify-dispatched (jq; keep the other fields) so the statusline switches from [cc-verifying] to [cc-stale]. (6) Do not spawn subagents and do not run make sync/install. Finish with a one-paragraph summary."
+  prompt+="You are a background session started by hooks/version-check.sh; no human is watching, so never ask questions. Bundle root: ${ROOT}. Rules: (1) If manifest/version.lock already pins ${cur} with a status other than baseline-pending and manifest/.drift is absent, another session already verified this version: stop without changes. If manifest/CHANGELOG.md already has an entry for v${cur} with HITL items still pending, do not re-verify: stop. (2) Apply ONLY the SAFE updates allowed by the skill's Safe-vs-HITL policy. (3) For every HITL / executable-logic change, write the full proposal (file, patch, rationale) into the v${cur} CHANGELOG entry and do NOT apply it. (4) Run the offline tests (tests/run-all.sh). (5) Bump version.lock to ${cur} and remove manifest/.drift ONLY if no HITL item is pending and tests pass; otherwise leave the lock and .drift untouched, say so explicitly in the CHANGELOG entry, and set .status to \"hitl-pending\" in manifest/.verify-dispatched (jq; keep the other fields) so the statusline switches from [cc-verifying] to [cc-stale]. (6) After the lock is bumped (step 5 succeeded, no HITL pending), attempt the repo backport: run \`CC_BACKPORT_TRAILER=\"Co-authored-by: <your model name> <noreply@anthropic.com>\" scripts/backport-verify.sh ${cur} \"<one-line summary of what changed>\"\` from the repo checkout (it resolves the checkout itself via \$CC_REPO_DIR, default ~/Claude/Projects/Agents/claude-cost-control -- see its header). It is a no-op if the repo checkout is missing or already backported -- read its BACKPORT_SKIPPED/PR_URL output. If it prints PR_URL=..., append that URL to the v${cur} CHANGELOG entry in ${ROOT}/manifest/CHANGELOG.md (a short \"Backported: <url>\" line) and set .pr in ${MARKER} to it (jq, keep other fields). If it skipped because the repo is missing, say so explicitly in the CHANGELOG entry instead of silently leaving the drift unbackported. Never merge the PR yourself. (7) Do not spawn subagents and do not run make sync/install (that would revert the installed tree before the backport PR merges). Finish with a one-paragraph summary."
 
   # Record the dispatch BEFORE launching, so a concurrent SessionStart dedupes.
   mkdir -p "$(dirname "$MARKER")" "$(dirname "$DISPATCH_LOG")" 2>/dev/null || true

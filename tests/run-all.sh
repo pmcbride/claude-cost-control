@@ -6,7 +6,7 @@ set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QUICK=0; [[ "${1:-}" == "--quick" ]] && QUICK=1
 rc=0
-for t in test-hooks.sh test-workflow-guard.sh test-merge.sh test-install.sh test-usage-report.sh; do
+for t in test-hooks.sh test-workflow-guard.sh test-merge.sh test-install.sh test-usage-report.sh test-sync-guard.sh test-backport-verify.sh; do
   echo; echo "───── $t ─────"
   bash "$DIR/$t" || rc=1
 done

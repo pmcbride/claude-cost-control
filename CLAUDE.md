@@ -175,8 +175,14 @@ Both statuslines append `[cc-verifying vX]` / `[cc-stale vX]` while `.drift` exi
 `[[ -f ]]` on the no-drift path; the wrapper stays a byte-for-byte passthrough then).
 
 **Manifest drift is the one place the installed copy leads the repo.** The verify skill
-patches `~/.claude/cost-control/manifest/`. Copy those back and commit *before* the next sync
-or sync reverts them:
+patches `~/.claude/cost-control/manifest/`. Since 2026-09-16 the background verify session
+backports this itself — `scripts/backport-verify.sh <version>` diffs the verify-patchable
+files against `$CC_REPO_DIR` (default `~/Claude/Projects/Agents/claude-cost-control`), opens
+a worktree + `docs/verify-vX` branch, runs tests, and opens a PR (never merges; see
+`skills/cost-control-verify/SKILL.md` "background mode"). `Makefile`'s `sync` target refuses
+to run if the installed `manifest/CHANGELOG.md` has a top entry the repo's copy doesn't —
+that's the safety net for when the backport PR hasn't landed yet (or `$CC_REPO_DIR` didn't
+resolve and the script silently no-op'd). If you ever need to do it by hand anyway:
 
 ```bash
 cp ~/.claude/cost-control/manifest/{claims.json,CHANGELOG.md} manifest/ && git diff
@@ -205,7 +211,8 @@ excludes them by design.
 - Tunables are all `CC_*` env vars (`CC_ROOT`, `CC_BUDGET_{WARN,SOFT,HARD}_PCT`,
   `CC_BLOCK_MODELS`, `CC_STATE_MAX_AGE`, `CC_BUDGET_EXEMPT_RE`, `CC_WATCHDOG_*`,
   `CC_USAGE_TMP_{DIR,TTL_MIN}`, `CC_USAGE_SWEEP_EVERY_MIN`,
-  `CC_WORKFLOW_REQUIRE_STAGE_MODEL`, `CC_WORKFLOW_SCRIPT_MAX_BYTES`, …). Add new knobs
+  `CC_WORKFLOW_REQUIRE_STAGE_MODEL`, `CC_WORKFLOW_SCRIPT_MAX_BYTES`, `CC_REPO_DIR`,
+  `CC_BACKPORT_TRAILER`, `CC_BACKPORT_NO_PUSH`, `CC_BACKPORT_REMOTE`, …). Add new knobs
   the same way, with a default that preserves current behavior.
 - Requires `jq`. The optional `dashboard/` needs Docker.
 

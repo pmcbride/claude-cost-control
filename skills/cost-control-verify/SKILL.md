@@ -36,7 +36,27 @@ hooks/agents/statusline/output-styles it governs.
   - if the lock already pins the current version (not `baseline-pending`) and
     `.drift` is gone, or the CHANGELOG already carries this version's entry with
     HITL still pending, another run got there first — stop;
-  - don't spawn subagents, don't `make sync`/`install`.
+  - **backport to the repo** (added 2026-09-16): once the lock is bumped (no
+    HITL pending, tests green), run `scripts/backport-verify.sh <version>
+    "<one-line summary>"` from the repo checkout — it resolves the checkout via
+    `$CC_REPO_DIR` (default `~/Claude/Projects/Agents/claude-cost-control`), diffs
+    the verify-patchable files (the same set as the Safe-vs-HITL policy below)
+    between the installed tree and repo `main`, opens a worktree +
+    `docs/verify-vX` branch (never the main checkout), runs the repo's test
+    suite, commits, pushes, and opens a PR — **never merges**. This exists
+    because the repo is source of truth and `make sync`'s `rsync --delete` of
+    `manifest/` silently reverts an un-backported verify on the next sync (a
+    human had to do this by hand for v2.1.274, PR #21). Set
+    `CC_BACKPORT_TRAILER="Co-authored-by: <your model name> <noreply@anthropic.com>"`
+    so the backport commit carries real attribution. Read the script's
+    `BACKPORT_SKIPPED=…` / `PR_URL=…` output: if it printed a PR URL, add a
+    "Backported: `<url>`" line to the v`<version>` CHANGELOG entry (the
+    installed one, `manifest/CHANGELOG.md`) and set `.pr` on
+    `manifest/.verify-dispatched` to it (`jq`, keep the other fields); if it
+    skipped because the repo checkout is missing, say so explicitly in the
+    CHANGELOG entry instead of silently leaving the drift unbackported;
+  - don't spawn subagents, don't `make sync`/`install` (that would revert the
+    installed tree before the backport PR merges).
 - **Inline mode** (`CC_VERIFY_MODE=inline`) — the hook emits the old
   `COST-CONTROL SETUP` / `COST-CONTROL VERSION DRIFT vX→vY` message into the chat;
   run the skill interactively as before (HITL items can be discussed live).
